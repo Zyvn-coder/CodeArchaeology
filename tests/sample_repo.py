@@ -116,6 +116,53 @@ def 拼接(左边, 右边):
     return 左边 + 右边
 '''
 
+PLAIN = '''\
+"""A file that is only ever edited."""
+
+VERSION = 1
+'''
+
+PLAIN_EDITED = '''\
+"""A file that is only ever edited."""
+
+VERSION = 2
+
+
+def version():
+    return VERSION
+'''
+
+APP = '''\
+"""The application entry point."""
+'''
+
+APP_RECREATED = '''\
+"""A second entry point, unrelated to the first."""
+
+
+def main():
+    print("hello")
+'''
+
+KEPT = '''\
+"""A helper that gets renamed away."""
+'''
+
+KEPT_RECREATED = '''\
+"""A different helper that reuses the old name."""
+'''
+
+# Twenty lines, of which a later rewrite replaces twelve. That leaves too little
+# for git's default 50% similarity, so the rename below is reported as a
+# deletion plus an addition. The ratio is written as code rather than as text so
+# it cannot drift when someone edits a line.
+HEAVY = "".join(f"heavy line {number}\n" for number in range(20))
+
+HEAVY_REWRITTEN = "".join(
+    f"rewritten line {number}\n" if number < 12 else f"heavy line {number}\n"
+    for number in range(20)
+)
+
 
 def git_output(repo, *args, timestamp=None):
     """Run ``git`` inside *repo* and return its stdout.
@@ -158,6 +205,11 @@ def _write_file(repo, relative_path, content):
 def _commit(repo, timestamp, message):
     git_output(repo, "add", "--all")
     git_output(repo, "commit", "--message", message, timestamp=timestamp)
+
+
+def _day(number: int) -> str:
+    """A fixed timestamp for the lifecycle fixture, one per commit."""
+    return f"2024-05-{number:02d}T09:00:00+00:00"
 
 
 def build_sample_repo(destination):
@@ -215,6 +267,66 @@ def build_single_commit_repo(destination, message="Only commit"):
 
     _write_file(repo, "only.py", "x = 1\n")
     _commit(repo, INITIAL_DATE, message)
+
+    return repo
+
+
+def build_lifecycle_repo(destination):
+    """Create the repository that exercises the file lifecycle rules.
+
+    The history it creates::
+
+        1  create app.py, kept.py, heavy.py, plain.py
+        2  rename app.py -> src/app.py
+        3  rename src/app.py -> src/core/app.py, and edit plain.py
+        4  delete src/core/app.py
+        5  create a second app.py
+        6  rename kept.py -> reused.py
+        7  create a second kept.py
+        8  rename heavy.py -> renamed.py while rewriting most of it
+
+    Eight commits, and between them they cover a file that is only edited, one
+    rename, a chain of two renames, a deletion, a name reused after a deletion,
+    a name reused after a rename, and a rename git refuses to recognise because
+    too little of the content survived.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "app.py", APP)
+    _write_file(repo, "kept.py", KEPT)
+    _write_file(repo, "heavy.py", HEAVY)
+    _write_file(repo, "plain.py", PLAIN)
+    _commit(repo, _day(1), "Create four files")
+
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "app.py").rename(repo / "src" / "app.py")
+    _commit(repo, _day(2), "Move app.py into the src package")
+
+    (repo / "src" / "core").mkdir(exist_ok=True)
+    (repo / "src" / "app.py").rename(repo / "src" / "core" / "app.py")
+    _write_file(repo, "plain.py", PLAIN_EDITED)
+    _commit(repo, _day(3), "Move app.py into src/core and edit plain.py")
+
+    (repo / "src" / "core" / "app.py").unlink()
+    _commit(repo, _day(4), "Delete the app module")
+
+    _write_file(repo, "app.py", APP_RECREATED)
+    _commit(repo, _day(5), "Create a second app.py")
+
+    (repo / "kept.py").rename(repo / "reused.py")
+    _commit(repo, _day(6), "Rename kept.py to reused.py")
+
+    _write_file(repo, "kept.py", KEPT_RECREATED)
+    _commit(repo, _day(7), "Create a second kept.py")
+
+    (repo / "heavy.py").rename(repo / "renamed.py")
+    _write_file(repo, "renamed.py", HEAVY_REWRITTEN)
+    _commit(repo, _day(8), "Rename heavy.py while rewriting most of it")
 
     return repo
 

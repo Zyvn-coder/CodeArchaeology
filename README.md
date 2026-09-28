@@ -203,6 +203,7 @@ src/codearchaeology/
     storage.py      the SQLite schema and the queries over it
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
+    lifecycle.py    rebuilding each file's life from the stored history
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -230,7 +231,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 | Stage | What it adds | Status |
 |---|---|---|
 | v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
-| v0.2 | File lifecycle, code hotspots | Planned |
+| v0.2 | File lifecycle, code hotspots | In development |
 | v0.3 | AST analysis, function and class evolution | Planned |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
 | v0.5 | Developer memory — your own technical usage over time | Planned |
@@ -249,6 +250,9 @@ stage is stable.
 - Binary files are stored without line counts and shown as `-`.
 - No patch content is read or stored, so the tool never shows the body of a
   diff. Only the changed files and their line counts.
+- Rename detection is git's, at its default 50% similarity. Renaming a file
+  while most of its content changes makes git report a deletion plus a separate
+  addition, which splits that file's life in two.
 - `commit` accepts shas and sha prefixes only, not refs such as `HEAD` or a
   branch name.
 - The database is keyed on the repository's absolute path, so moving or renaming
