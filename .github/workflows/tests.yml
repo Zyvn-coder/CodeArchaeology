@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One failing platform should not hide the others.
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        python:
+          - "3.11"
+          - "3.13"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+
+      # The declared floor is 3.11 while development happens on 3.13, so the
+      # suite is asked to confirm which interpreter it actually got.
+      - name: Run the tests on the requested interpreter
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python }}
+        run: uv run --python ${{ matrix.python }} pytest
