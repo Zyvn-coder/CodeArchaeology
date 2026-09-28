@@ -210,6 +210,7 @@ src/codearchaeology/
     commit.py       the single-commit view
     lifecycle.py    rebuilding each file's life from the stored history
     statistics.py   the numbers that summarise one file's life
+    hotspots.py     ranking files by how often they change
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -262,7 +263,8 @@ stage is stable.
   stored alongside the rename, so how close a rename came to that threshold
   stays visible after the fact. One consequence reaches the numbers: the
   additions and deletions a file is credited with depend on that decision, while
-  the net change does not.
+  the net change does not. A file whose renames were missed is also scattered
+  across several rows, so it can fall off a ranking it belongs on.
 - A shallow clone is not a shorter history, it is a differently shaped one. Git
   treats the oldest commit it has as the root, so every file in it looks like it
   was born there and a merge commit reports changes it never made. `analyze`

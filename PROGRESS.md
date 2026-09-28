@@ -10,7 +10,7 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, at commit `30d2bdc`.**
+**Last updated: 2026-09-28, describing the project at commit `c482b2a`.**
 
 ## Where the project stands
 
@@ -18,15 +18,18 @@ v0.1 is finished and pushed: `analyze`, `timeline` and `commit` work, and the
 suite runs green on Linux and Windows, Python 3.11 and 3.13.
 
 v0.2 is in progress, and everything built so far is **data layer with no way to
-see it**. Three units in a row were spent on models that no command reads yet:
+see it**. Four units in a row were spent on models that no command reads yet:
 
 | Unit | What it added | User-visible? |
 |---|---|---|
 | 1 | `lifecycle.py` — one file's identity across renames, deletes and reuse | no |
 | 2 | the rename similarity git reports, stored; schema version 1 to 2 | no |
 | 3 | `statistics.py` — the numbers that summarise a file's life | one stderr warning |
+| 4 | `hotspots.py` — ranking files by how often they change | no |
 
-The other half of v0.2, code hotspots, has not been started.
+Both halves of v0.2 are now built at the data layer, and neither is reachable
+from the command line. That is the biggest open risk in the project: four units
+of model with nothing exercising it end to end.
 
 ## Decisions and why
 
@@ -39,7 +42,11 @@ The other half of v0.2, code hotspots, has not been started.
 | A modification is an event that changed content | `M` always counts; `R` counts only when it carried line changes. A pure rename leaves the content alone. |
 | A file created and never touched has no last-modified time | Nothing modified it. Filling in its birth would be inventing a fact. |
 | The rename threshold is a knob, not a git fact | Any `-M<n>` is still git's algorithm. Choosing `n` is not "inventing our own inference", so the principle does not decide it — it only rules out writing our own similarity scorer. |
-| No CLI yet | The user chose data layer first, three units running. This is their call to keep making. |
+| No CLI yet | The user chose data layer first, four units running. This is their call to keep making. |
+| Hotspots are keyed on identity, not on names | Counting by name does two opposite things at once: it splits one renamed file across rows, and it merges two unrelated files that happened to share a name. A fixture demonstrates both in the same table. |
+| Hotspots rank by commit count, not by churn | Commit counts are the steadier signal; churn is dominated by generated files and moves with the rename threshold. Both numbers are on the row, so a caller can sort by the other. |
+| Deleted files stay out of the ranking by default | A hotspot is a place, and a file that is gone is not one. The history keeps them behind `include_deleted`. |
+| Frequency must never be reported as importance | The same count comes from core code, from code that keeps breaking, from moving requirements, from a refactor in progress. The tool cannot tell those apart and must not imply it can. |
 
 ## Traps already found
 
@@ -68,6 +75,13 @@ The other half of v0.2, code hotspots, has not been started.
 9. **A test must not verify a definition against itself.** The net-change
    invariant test asks git for the file's content at its last commit rather than
    re-deriving the same arithmetic, so the two are able to disagree.
+10. **Commits can share a timestamp, and the walk depended on the order it was
+    handed.** `build_lifecycles` sorted by time alone, and Python's sort is
+    stable, so ties kept the caller's order — which from the store is newest
+    first. A rename was replayed before the creation it belongs to and the file
+    split in two. Rebase, scripted imports and converted histories all produce
+    same-second commits. It now walks the parent links. Every earlier fixture
+    used distinct timestamps, which is why three rounds of tests missed it.
 
 ## Environment notes
 
@@ -86,14 +100,15 @@ The other half of v0.2, code hotspots, has not been started.
 
 1. **The first command that shows any of this**: `archaeology file <path>`, with
    the lifecycle's path history and its statistics.
-2. **Code hotspots**, the other half of v0.2.
+2. **A ranking command** to go with it, listing the most changed files. Whatever
+   it is called, it must not present frequency as importance.
 3. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 121 tests
+$ uv run pytest                 # 130 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```
