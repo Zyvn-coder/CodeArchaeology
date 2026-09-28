@@ -10,6 +10,7 @@ from codearchaeology.analysis import analyze
 from codearchaeology.history import Commit, FileChange, read_commits
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles, load_lifecycles
 from sample_repo import (
+    build_edit_history_repo,
     build_lifecycle_repo,
     build_rename_boundary_repo,
     build_same_second_repo,
@@ -259,3 +260,48 @@ def test_an_edit_without_a_live_owner_joins_the_last_life_that_held_the_path() -
 
     assert len(built) == 1
     assert built[0].path_history == ("app.py", "src/app.py", "app.py")
+
+
+def test_repeated_edits_stay_one_life(tmp_path: Path) -> None:
+    """Three modifications in a row. Nothing about editing the same file again
+    starts a new life, however many times it happens."""
+    repository = build_edit_history_repo(tmp_path / "edits")
+    lives = build_lifecycles(read_commits(repository))
+
+    assert len(lives) == 3
+
+    edited = _lives_of(lives, "edited.py")[0]
+
+    assert [event.change_type for event in edited.events] == ["A", "M", "M", "M"]
+    assert edited.path_history == ("edited.py",)
+    assert edited.renames == 0
+    assert edited.is_alive
+
+
+def test_a_file_of_no_bytes_is_born_and_stays_one_life(tmp_path: Path) -> None:
+    """An empty file is an ordinary file with nothing in it.
+
+    Git reports zero added and zero deleted lines rather than the dashes it uses
+    for a binary file, so nothing here may treat the zeroes as "unknown".
+    """
+    repository = build_edit_history_repo(tmp_path / "empty")
+    lives = build_lifecycles(read_commits(repository))
+
+    untouched = _lives_of(lives, "untouched.py")[0]
+
+    assert [event.change_type for event in untouched.events] == ["A"]
+    assert (untouched.created.added_lines, untouched.created.deleted_lines) == (0, 0)
+    assert not untouched.created.is_binary
+    assert untouched.is_alive
+
+
+def test_an_empty_file_that_is_filled_in_keeps_its_life(tmp_path: Path) -> None:
+    """Writing the first line into an empty file is a modification, not a birth."""
+    repository = build_edit_history_repo(tmp_path / "filled")
+    lives = build_lifecycles(read_commits(repository))
+
+    empty = _lives_of(lives, "empty.py")[0]
+
+    assert [event.change_type for event in empty.events] == ["A", "M"]
+    assert empty.created.added_lines == 0
+    assert empty.events[-1].added_lines == 3

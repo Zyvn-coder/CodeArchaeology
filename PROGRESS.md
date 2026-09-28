@@ -10,8 +10,8 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing commit `c111281` plus the `--json` work
-that is in the working tree but not committed yet.**
+**Last updated: 2026-09-28, describing commits `261a7f9` and `e657f87` plus the
+test-matrix work that is in the working tree but not committed yet.**
 
 ## Where the project stands
 
@@ -39,6 +39,31 @@ principle rather than as a numbered unit: "CLI → JSON → Web UI → AI". `tim
 already had `--json` from v0.1; this added it to the three commands v0.2 brought,
 so the whole read side of the CLI is now machine-readable.
 
+## The v0.2 test matrix
+
+The user set this matrix for v0.2 and asked for it to be complete rather than
+numerous. Where each row is covered, so nobody has to search for it:
+
+| Scenario | Where it is covered |
+|---|---|
+| Create | `test_lifecycle.py::test_a_file_that_is_only_edited`, `::test_the_first_commit_births_every_file_it_contains` |
+| Modify | same, plus `test_statistics.py::test_a_file_that_is_created_and_then_edited` |
+| Modify repeatedly | `build_edit_history_repo`; `test_statistics.py::test_a_file_edited_three_times_counts_three_modifications`, `::test_last_modified_names_the_last_edit_not_the_first` |
+| Rename | `test_lifecycle.py::test_a_rename_does_not_split_the_life` |
+| Rename chain | `test_lifecycle.py::test_path_history_lists_every_name_in_order` (two renames deep) |
+| Delete | `test_lifecycle.py::test_a_deleted_file_is_closed` |
+| Delete then recreate | `test_lifecycle.py::test_a_name_reused_after_a_deletion_is_a_second_life` |
+| Rename with a heavy rewrite | `build_rename_boundary_repo`; `test_lifecycle.py::test_the_threshold_splits_three_files_differently`, `::test_a_rename_that_changed_too_much_breaks_the_chain` |
+| Binary file | `assets/logo.png` in `build_sample_repo`; `test_statistics.py::test_a_binary_file_reports_no_lines_but_is_counted` |
+| Unicode path | `工具/文本.py` in `build_sample_repo`; asserted in the hotspots and files tests |
+| Empty file | `build_edit_history_repo`; `test_lifecycle.py::test_a_file_of_no_bytes_is_born_and_stays_one_life`, `test_statistics.py::test_an_empty_file_is_not_a_binary_file` |
+| One name, two lives | `test_lifecycle.py::test_a_name_reused_after_a_deletion_is_a_second_life`, `::test_a_name_reused_after_a_rename_is_a_second_life` |
+| Large repository | `test_scale.py`, over a thousand commits and five thousand file changes |
+
+Beyond the matrix the suite also pins down the same-second ordering trap, a
+rename that survives at 56% similarity, an edit whose path has no live owner,
+and a cyclic history that git cannot produce.
+
 ## Decisions and why
 
 | Decision | Why |
@@ -64,6 +89,8 @@ so the whole read side of the CLI is now machine-readable.
 | `deleted` is a flag rather than a null date to infer from | A reader that only wants to know whether the file is still there should not have to work out that `deleted_at: null` means "alive". |
 | A timestamp is `isoformat()`, not `str()` | `str(datetime)` drops the UTC offset, and a commit's time without its offset is a different fact from the one git reported. |
 | A time the file never had is `null` | Same rule as the block printing `-`: a file created and never edited has no last-modified time, and filling its birth in would be inventing a fact. |
+| The scale fixture is built by `git fast-import` | A thousand `git commit` calls take minutes and fast-import takes a quarter of a second, which is the difference between a test that is kept and one that gets deleted for being slow. One grammar note, learned the hard way: a `blob` command may not appear inside a commit, so file contents go inline on the `M` line. |
+| The scale test asserts size, not elapsed time | A test that fails when CI is busy teaches people to re-run it. The fixture's size is what catches a walk that went quadratic; a wall-clock bound would only add flakiness. |
 
 ## Traps already found
 
@@ -109,6 +136,14 @@ so the whole read side of the CLI is now machine-readable.
     thing. Search backwards from the command line for the fence instead. This
     produced two false alarms in one session — once on the new JSON blocks, once
     on the Chinese README's `commit` block, which was correct all along.
+12. **A fixture set can be uniformly blind.** Every repository in the suite
+    modified a file at most once, so a last-modified time taken from the *first*
+    modification rather than the last would have passed on all of them — the
+    existing test for it compared against `changes[-1]`, which is the same event
+    as `changes[0]` when there is only one. The gap was not found by running the
+    suite; it was found by asking the user's matrix "which of these is covered"
+    and measuring instead of assuming. The question to ask of a fixture is not
+    what it covers but **what could be wrong and still pass**.
 
 ## Environment notes
 
@@ -151,7 +186,7 @@ so the whole read side of the CLI is now machine-readable.
 ## How to verify
 
 ```console
-$ uv run pytest                 # 176 tests
+$ uv run pytest                 # 192 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

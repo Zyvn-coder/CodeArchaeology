@@ -9,6 +9,7 @@ from codearchaeology.history import read_commits
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
 from codearchaeology.statistics import FileStatistics, summarize
 from sample_repo import (
+    build_edit_history_repo,
     build_lifecycle_repo,
     build_rename_boundary_repo,
     build_sample_repo,
@@ -26,6 +27,11 @@ def boundary_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def edit_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return build_edit_history_repo(tmp_path_factory.mktemp("stats-edits"))
+
+
+@pytest.fixture(scope="module")
 def lives(lifecycle_repo: Path) -> tuple[Lifecycle, ...]:
     return build_lifecycles(read_commits(lifecycle_repo))
 
@@ -33,6 +39,11 @@ def lives(lifecycle_repo: Path) -> tuple[Lifecycle, ...]:
 @pytest.fixture(scope="module")
 def boundary_lives(boundary_repo: Path) -> tuple[Lifecycle, ...]:
     return build_lifecycles(read_commits(boundary_repo))
+
+
+@pytest.fixture(scope="module")
+def edit_lives(edit_repo: Path) -> tuple[Lifecycle, ...]:
+    return build_lifecycles(read_commits(edit_repo))
 
 
 @pytest.fixture(scope="module")
@@ -170,7 +181,12 @@ def test_a_binary_file_reports_no_lines_but_is_counted(sample_lives) -> None:
 
 
 def test_net_change_matches_the_file_git_actually_has(
-    lifecycle_repo: Path, lives, boundary_repo: Path, boundary_lives
+    lifecycle_repo: Path,
+    lives,
+    boundary_repo: Path,
+    boundary_lives,
+    edit_repo: Path,
+    edit_lives,
 ) -> None:
     """The arithmetic is checked against the content, not against itself.
 
@@ -178,7 +194,12 @@ def test_net_change_matches_the_file_git_actually_has(
     so the net has to come out as its size at the last event: the file git holds
     at that commit while it lives, and nothing at all once it is gone.
     """
-    for repository, group in ((lifecycle_repo, lives), (boundary_repo, boundary_lives)):
+    groups = (
+        (lifecycle_repo, lives),
+        (boundary_repo, boundary_lives),
+        (edit_repo, edit_lives),
+    )
+    for repository, group in groups:
         for life in group:
             if any(event.is_binary for event in life.events):
                 continue
@@ -202,3 +223,73 @@ def test_last_modified_names_the_commit_that_changed_it(lives) -> None:
     assert statistics.last_modified_sha == changed[-1].commit_sha
     assert statistics.last_modified_at == changed[-1].committed_at
     assert statistics.created_sha == plain.created.commit_sha
+
+
+def test_a_file_edited_three_times_counts_three_modifications(edit_lives) -> None:
+    edited = _stats(edit_lives, "edited.py")
+
+    assert edited.commits == 4
+    assert edited.modifications == 3
+    assert edited.renames == 0
+    assert (edited.additions, edited.deletions) == (11, 2)
+    assert edited.net_change == 9
+    assert not edited.is_deleted
+
+
+def test_last_modified_names_the_last_edit_not_the_first(edit_lives) -> None:
+    """What the edit fixture exists for.
+
+    Every other fixture modifies a file at most once, so its first modification
+    and its last are the same event, and a last-modified time taken from the
+    wrong end of the list passes on all of them. This is the one file that can
+    tell the two apart.
+    """
+    edited = _lives_of(edit_lives, "edited.py")[0]
+    modifications = [event for event in edited.events if event.change_type == "M"]
+    statistics = summarize(edited)
+
+    assert len(modifications) == 3
+    assert statistics.last_modified_sha == modifications[-1].commit_sha
+    assert statistics.last_modified_sha != modifications[0].commit_sha
+    assert statistics.last_modified_at == modifications[-1].committed_at
+
+
+def test_an_empty_file_is_not_a_binary_file(edit_lives) -> None:
+    """The two zeroes are different facts.
+
+    Git reports ``0 0`` for a file with no lines and ``- -`` for one it cannot
+    count. Both end up as zero on the row, so the binary count is what keeps
+    them apart: an empty file's zeroes mean the content really is empty.
+    """
+    untouched = _stats(edit_lives, "untouched.py")
+    life = _lives_of(edit_lives, "untouched.py")[0]
+
+    assert untouched.commits == 1
+    assert (untouched.additions, untouched.deletions) == (0, 0)
+    assert untouched.binary_changes == 0
+    assert not any(event.is_binary for event in life.events)
+
+
+def test_a_file_that_was_empty_and_then_filled(edit_lives) -> None:
+    empty = _stats(edit_lives, "empty.py")
+
+    assert empty.commits == 2
+    assert empty.modifications == 1
+    assert (empty.additions, empty.deletions) == (3, 0)
+    assert empty.net_change == 3
+    assert empty.last_modified_sha is not None
+    assert not empty.is_deleted
+
+
+def test_a_file_with_no_lines_and_no_edits_has_no_last_modified_time(
+    edit_lives,
+) -> None:
+    """Nothing modified it, so there is no such time — the same rule that gives
+    a renamed-but-untouched file a dash. Its birth does not stand in for it."""
+    untouched = _stats(edit_lives, "untouched.py")
+
+    assert untouched.modifications == 0
+    assert untouched.last_modified_at is None
+    assert untouched.last_modified_sha is None
+    assert untouched.net_change == 0
+    assert untouched.created_at == _lives_of(edit_lives, "untouched.py")[0].created.committed_at

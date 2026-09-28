@@ -156,6 +156,42 @@ KEPT_RECREATED = '''\
 """A different helper that reuses the old name."""
 '''
 
+# One file, edited three times, so that "the last edit" is a different commit
+# from "the first edit". Nothing else in the suite edits a file twice, which
+# means nothing else can tell those two apart.
+EDITED_ONCE = '''\
+"""A file that is edited several times."""
+
+VERSION = 1
+'''
+
+EDITED_TWICE = '''\
+"""A file that is edited several times."""
+
+VERSION = 2
+'''
+
+EDITED_THRICE = '''\
+"""A file that is edited several times."""
+
+VERSION = 3
+
+
+def version():
+    return VERSION
+'''
+
+# Born with no bytes at all. Git reports zero added and zero deleted lines for
+# it rather than the dashes it uses for a binary file, which is the boundary the
+# is_binary rule turns on.
+EMPTY = ""
+
+FILLED = '''\
+"""A file that was born empty and filled in later."""
+
+VALUE = 1
+'''
+
 # Twenty lines, of which a later rewrite replaces twelve. That leaves too little
 # for git's default 50% similarity, so the rename below is reported as a
 # deletion plus an addition. The ratio is written as code rather than as text so
@@ -348,6 +384,149 @@ def build_lifecycle_repo(destination):
     (repo / "heavy.py").rename(repo / "renamed.py")
     _write_file(repo, "renamed.py", HEAVY_REWRITTEN)
     _commit(repo, _day(8), "Rename heavy.py while rewriting most of it")
+
+    return repo
+
+
+def build_edit_history_repo(destination):
+    """Create the repository that edits one file over and over.
+
+    The history it creates::
+
+        1  create edited.py, empty.py and untouched.py
+        2  edit edited.py
+        3  edit edited.py again
+        4  edit edited.py a third time
+        5  fill empty.py
+
+    Five commits, and the first four exist for one reason: ``edited.py`` is the
+    only file in the whole suite that is modified more than once, so it is the
+    only one that can tell "the last edit" apart from "the first edit". Every
+    other fixture has at most a single modification, which means a last-modified
+    time taken from the wrong end would pass everywhere else.
+
+    ``untouched.py`` is born with no bytes and never touched, and ``empty.py``
+    is born empty and filled in later. They are the boundary of the binary rule:
+    git reports zero lines for an empty file and dashes for a binary one, so a
+    file with no lines must not be mistaken for a file git cannot count.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "edited.py", EDITED_ONCE)
+    _write_file(repo, "empty.py", EMPTY)
+    _write_file(repo, "untouched.py", EMPTY)
+    _commit(repo, _day(1), "Create three files, two of them empty")
+
+    _write_file(repo, "edited.py", EDITED_TWICE)
+    _commit(repo, _day(2), "Edit edited.py")
+
+    _write_file(repo, "edited.py", EDITED_THRICE)
+    _commit(repo, _day(3), "Edit edited.py again")
+
+    _write_file(repo, "edited.py", EDITED_THRICE + "\n# one more\n")
+    _commit(repo, _day(4), "Edit edited.py a third time")
+
+    _write_file(repo, "empty.py", FILLED)
+    _commit(repo, _day(5), "Fill in the empty file")
+
+    return repo
+
+
+LARGE_COMMITS = 1000
+LARGE_FILES = 60
+LARGE_TOUCHED = 5
+LARGE_LINES = 22
+
+
+def _large_file(index: int, edit: int) -> bytes:
+    """One revision of one file in the large fixture: a fixed size, edited once."""
+    body = f"# module {index}\n"
+    body += "".join(f"line {number}\n" for number in range(LARGE_LINES - 2))
+    body += f"# edit {edit}\n"
+    return body.encode()
+
+
+def _large_stream(commits: int, files: int, touched: int) -> bytes:
+    """A ``git fast-import`` stream that builds the whole history at once.
+
+    The contents are inline in the stream rather than sent as separate ``blob``
+    commands, because fast-import rejects a ``blob`` inside a commit. The extra
+    newline after each body is the one fast-import allows after ``data``, not
+    part of the file.
+    """
+    out: list[bytes] = []
+    parent = None
+    mark = 0
+
+    for number in range(commits):
+        mark += 1
+        when = 1700000000 + number * 60
+        message = f"Change {number}\n".encode()
+
+        out.append(f"commit refs/heads/main\nmark :{mark}\n".encode())
+        out.append(f"author {AUTHOR_NAME} <{AUTHOR_EMAIL}> {when} +0000\n".encode())
+        out.append(f"committer {AUTHOR_NAME} <{AUTHOR_EMAIL}> {when} +0000\n".encode())
+        out.append(f"data {len(message)}\n".encode() + message)
+        if parent is not None:
+            out.append(f"from :{parent}\n".encode())
+
+        for offset in range(touched):
+            index = (number + offset) % files
+            body = _large_file(index, number)
+            out.append(
+                f"M 100644 inline pkg{index // 10}/mod{index}.py\ndata {len(body)}\n".encode()
+                + body
+                + b"\n"
+            )
+
+        parent = mark
+
+    return b"".join(out)
+
+
+def build_large_repo(
+    destination,
+    commits: int = LARGE_COMMITS,
+    files: int = LARGE_FILES,
+    touched: int = LARGE_TOUCHED,
+):
+    """Create a repository with a thousand commits and five thousand changes.
+
+    Each file is created by the first commit that touches it and edited by every
+    later one, so the history is one birth and a run of edits per file, with no
+    renames and no deletions. The size is the point, not the rules: this is what
+    catches a walk that is accidentally quadratic, or a query that stops working
+    once there is more than a handful of rows.
+
+    ``git fast-import`` builds it in about a quarter of a second. A thousand
+    ``git commit`` calls would take minutes, which is the difference between a
+    test that is kept and a test that gets deleted for being slow.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    completed = subprocess.run(
+        ["git", "fast-import", "--quiet"],
+        cwd=repo,
+        input=_large_stream(commits, files, touched),
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"git fast-import failed: {completed.stderr.decode()}")
+
+    # fast-import writes objects and refs, not the working tree, so the checkout
+    # is done afterwards. The history is all the tests read, but a repository
+    # whose files are missing from disk is a trap for whoever runs it by hand.
+    git_output(repo, "reset", "--hard", "HEAD")
 
     return repo
 
