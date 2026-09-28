@@ -10,8 +10,9 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing commits `261a7f9` and `e657f87` plus the
-test-matrix work that is in the working tree but not committed yet.**
+**Last updated: 2026-09-28, describing commits `261a7f9`, `e657f87` and
+`278bf00`, plus the benchmark work that is in the working tree but not committed
+yet.**
 
 ## Where the project stands
 
@@ -64,6 +65,54 @@ Beyond the matrix the suite also pins down the same-second ordering trap, a
 rename that survives at 56% similarity, an edit whose path has no live owner,
 and a cyclic history that git cannot produce.
 
+## Performance
+
+Measured on 2026-09-28 with `benchmarks/benchmark.py`, over generated histories,
+fastest of three runs:
+
+| Commits | Changes | Repo | DB | `analyze` | `timeline` | `hotspots` | `file <path>` | by name only |
+|---|---|---|---|---|---|---|---|---|
+| 20,000 | 100,000 | 15 MB | 25 MB | 3.4s | 0.6s | 0.8s | 0.8s | 0.06s |
+| 100,000 | 500,000 | 77 MB | 124 MB | 19.7s | 4.0s | 6.5s | 6.4s | 0.30s |
+| 200,000 | 1,000,000 | 154 MB | 248 MB | 45.6s | 8.5s | 13.8s | 13.8s | 0.64s |
+
+Three things to carry forward:
+
+- **The v0.1 figure still holds.** The user recorded 20,000 commits at about
+  0.65s for a timeline query; this measures 0.58s at the same size. Nothing in
+  v0.2 slowed the timeline down, which was the thing worth checking.
+- **`hotspots` and `file <path>` cost the same, by construction.** Both rebuild
+  every life, and a life can only be rebuilt by walking the whole commit graph.
+  The gap between them and the by-name query is what a stored lifecycle would
+  buy, and at 200,000 commits it is 13.8s against 0.64s.
+- **Nothing is quadratic.** Doubling the commits roughly doubles every figure.
+  Between 20,000 and 100,000 the rise is steeper than fivefold, which is the
+  cache falling out of the picture rather than the algorithm changing shape.
+
+## Out of scope for v0.2
+
+The user drew this boundary explicitly and the reasons are theirs. A session that
+finds a feature request touching one of these should stop and ask rather than
+build it — these are not "not yet scheduled", they are "do not start".
+
+| Not now | Why |
+|---|---|
+| AI in any form — including "summarise this file" | Too early. Core First already forbids the *core* depending on a model; this extends it to features that merely use one. |
+| AST analysis | That is v0.3. What has to be solid first is the chain Git history → file identity → file lifecycle. |
+| A web UI | Tempting, and it is how a project like this quietly becomes "a nice page that shows Git data". That is not the core. |
+| Inferring *why* something changed — "this file changes often, so it has bugs" | There is not enough evidence for that conclusion, and inventing some is not the plan. |
+
+Verified on 2026-09-28: the only runtime dependencies are `typer` and `rich`, and
+`src/` has no match for `urllib`, `requests`, `httpx`, `socket`, `http`, `openai`,
+`anthropic`, `langchain`, `transformers`, `ast`, `flask`, `fastapi`, `django`,
+`streamlit` or `gradio`. Re-run that check before claiming any of it still holds.
+
+**One wording trap in the charter.** `AGENTS.md` §5.4 says AST analysis is
+Python-only for v0.1–v0.3, which reads as though AST is in scope now and merely
+language-limited. The roadmap in the README is unambiguous — AST is v0.3 — but
+the charter is what gets read first, so a session that starts proposing AST work
+can point at that line. The rule above is the one that governs.
+
 ## Decisions and why
 
 | Decision | Why |
@@ -91,6 +140,9 @@ and a cyclic history that git cannot produce.
 | A time the file never had is `null` | Same rule as the block printing `-`: a file created and never edited has no last-modified time, and filling its birth in would be inventing a fact. |
 | The scale fixture is built by `git fast-import` | A thousand `git commit` calls take minutes and fast-import takes a quarter of a second, which is the difference between a test that is kept and one that gets deleted for being slow. One grammar note, learned the hard way: a `blob` command may not appear inside a commit, so file contents go inline on the `M` line. |
 | The scale test asserts size, not elapsed time | A test that fails when CI is busy teaches people to re-run it. The fixture's size is what catches a walk that went quadratic; a wall-clock bound would only add flakiness. |
+| `--limit` is not to be optimized now | The user's call, and the measurement backs it: `--limit` only affects what is printed, the whole history is read before it is sliced, and slicing is not where the time goes. Optimizing it would be work on a line that is already flat. |
+| The benchmark measures four operations, not one | They do not scale alike, and the interesting fact — that two of them cost the same for a reason rather than an accident — is invisible from a single number. A benchmark that measured only the timeline would have shown nothing wrong and told nobody why. |
+| The benchmark runs by hand and is not in CI | At 200,000 commits it takes minutes, and a wall-clock assertion would fail whenever the machine is busy. It is a tool for a question, not a gate. |
 
 ## Traps already found
 
@@ -178,9 +230,15 @@ and a cyclic history that git cannot produce.
    byte-identical JSON as well. The user asked for both, so both exist. If one of
    them should become something else — an inventory including deleted files, say
    — that is their call.
-4. **The `--json` work is not committed.** It is in the working tree, green, and
-   waiting on the user's word.
-5. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
+4. **The benchmark work is not committed.** `benchmarks/benchmark.py` and the
+   two READMEs are in the working tree, green, waiting on the user's word.
+5. **The benchmark is not covered by anything.** Nothing runs
+   `benchmarks/benchmark.py`, so a rename in the modules it imports breaks it
+   silently until someone tries to use it. That is a deliberate trade — a test
+   that runs a benchmark muddies what the suite is for — but it is a trade, not
+   an oversight, and a smoke run at a few hundred commits would close it cheaply
+   if it ever bites.
+6. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify

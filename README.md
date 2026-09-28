@@ -371,6 +371,47 @@ checkouts of the same project keep separate ones.
 Set `CODEARCHAEOLOGY_CACHE_DIR` to put them somewhere else, or pass `--db` to any
 command to name the file directly.
 
+## Performance
+
+`benchmarks/benchmark.py` measures the four operations the tool is built around,
+at whatever scale you ask for. It is run by hand, not by CI, because a test that
+asserts a wall-clock time fails whenever the machine is busy and teaches people
+to re-run it.
+
+```console
+$ uv run python benchmarks/benchmark.py --commits 20000 100000 200000
+```
+
+On one machine, over a generated history, taking the fastest of three runs:
+
+| Commits | File changes | Repository | Database | `analyze` | `timeline` | `hotspots` | `file <path>` | `file <path>` by name only |
+|---|---|---|---|---|---|---|---|---|
+| 20,000 | 100,000 | 15 MB | 25 MB | 3.4s | 0.6s | 0.8s | 0.8s | 0.06s |
+| 100,000 | 500,000 | 77 MB | 124 MB | 19.7s | 4.0s | 6.5s | 6.4s | 0.30s |
+| 200,000 | 1,000,000 | 154 MB | 248 MB | 45.6s | 8.5s | 13.8s | 13.8s | 0.64s |
+
+**The history is generated, so read the curve and not the numbers.** Files are
+created and then edited in place, one line at a time. A real repository has
+larger diffs, more renames, and a longer tail of file sizes, and all three move
+these figures.
+
+What the curve says:
+
+- **Nothing is quadratic.** From 100,000 commits to 200,000 the cost of every
+  operation roughly doubles. Between 20,000 and 100,000 it rises faster than
+  fivefold, which is where the working set stops fitting in cache rather than
+  where the algorithm changes shape.
+- **`analyze` dominates, and it is paid once.** Reading the history out of git
+  and writing it to SQLite costs more than every query put together. Everything
+  after it reads the database instead.
+- **`hotspots` and `file <path>` cost the same**, because a file's life can only
+  be rebuilt by walking the whole commit graph, and both of them need one. This
+  is not a coincidence to be tuned away; it is the shape of the model.
+- **Asking by name is one to two orders of magnitude cheaper** than asking by
+  identity, because it is a query rather than a walk. It is also a different
+  question: it answers for a path as written, not for the file across its
+  renames.
+
 ## Project structure
 
 ```
@@ -391,6 +432,8 @@ src/codearchaeology/
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
     conftest.py     the fixture that hands that repository to every test
+benchmarks/
+    benchmark.py    the four operations, measured at whatever scale you ask
 ```
 
 ## Principles
