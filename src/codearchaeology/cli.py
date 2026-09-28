@@ -1,7 +1,7 @@
 """Command line entry point for CodeArchaeology.
 
-v0.1 is under construction: ``analyze``, ``timeline``, ``hotspots`` and
-``commit`` work.
+Six commands: ``analyze`` fills the database, ``timeline``, ``hotspots``,
+``files``, ``file`` and ``commit`` read it back.
 """
 
 from pathlib import Path
@@ -14,12 +14,15 @@ from codearchaeology.analysis import (
     AnalysisError,
     shallow_clone_note,
     stale_analysis_note,
+    stored_head_sha,
 )
 from codearchaeology.analysis import analyze as run_analysis
 from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
+from codearchaeology.file import build_block, find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import GitError, find_repository_root
+from codearchaeology.hotspots import build_table as build_files_table
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
 from codearchaeology.timeline import build_table, load_timeline
@@ -56,6 +59,18 @@ def _repository_and_database(path: Path, database: Path | None) -> tuple[Path, P
     if repository_root is None:
         raise GitError(f"not a git repository: {path}")
     return repository_root, database or database_path(repository_root)
+
+
+def _warn_if_behind(repository_root: Path, database: Path) -> None:
+    """Say on stderr when the stored analysis stops short of the repository.
+
+    Every command that reads the history makes a claim about completeness, so
+    every one of them has to admit when the snapshot it read is behind. stderr
+    keeps the output itself unchanged for anything reading it.
+    """
+    note = stale_analysis_note(repository_root, stored_head_sha(repository_root, database))
+    if note:
+        typer.echo(note, err=True)
 
 
 @app.callback()
@@ -171,6 +186,8 @@ def hotspots(
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
 
+    _warn_if_behind(repository_root, database)
+
     rows = rank_hotspots(lives)
     selected = rows if show_all else rows[:limit]
 
@@ -194,6 +211,70 @@ def hotspots(
         "Frequent change is not importance: the reason each of these files is"
         " busy is not something this tool can see."
     )
+
+
+@app.command()
+def files(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    limit: int = typer.Option(
+        20, "--limit", "-n", min=1, help="How many files to show."
+    ),
+    show_all: bool = typer.Option(False, "--all", help="Show every file."),
+) -> None:
+    """List the files, most changed first."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        lives = load_lifecycles(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_behind(repository_root, database)
+
+    rows = rank_hotspots(lives)
+    selected = rows if show_all else rows[:limit]
+
+    console = Console()
+    console.print(build_files_table(selected, console.width))
+
+    hidden = len(rows) - len(selected)
+    if hidden:
+        typer.echo(f"\n{hidden} more files. Use --all to see them.")
+
+
+@app.command()
+def file(
+    file_path: str = typer.Argument(..., help="File to show, as git writes it."),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+) -> None:
+    """Show one file's life: its names, its dates and its numbers."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        lives = load_lifecycles(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_behind(repository_root, database)
+
+    wanted = normalise(file_path)
+    found = find_files(lives, wanted)
+    if not found:
+        typer.echo(
+            f"Error: nothing in the stored history touched {wanted};"
+            f" use 'archaeology files' to see what is there",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    # A name can belong to more than one file. All of them are shown, oldest
+    # first, because picking one would hide the others.
+    for position, lifecycle in enumerate(found):
+        if position:
+            typer.echo()
+        typer.echo(build_block(lifecycle))
 
 
 @app.command()

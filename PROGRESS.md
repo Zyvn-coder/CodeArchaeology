@@ -27,10 +27,10 @@ see it**. Four units in a row were spent on models that no command reads yet:
 | 3 | `statistics.py` — the numbers that summarise a file's life | one stderr warning |
 | 4 | `hotspots.py`, and the `hotspots` command that prints the ranking | yes |
 | 5 | `relationships.py` — commits and files, read from either end | no |
+| 6 | the `file` and `files` commands, and `file.py` behind the first | yes |
 
-`lifecycle.py`, `statistics.py` and `relationships.py` are still not reachable
-from the command line: `archaeology file <path>` does not exist, so the path
-history and the per-file numbers can only be seen through the tests.
+Every part of the v0.2 model now has a command in front of it. `analyze` fills
+the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
 
 ## Decisions and why
 
@@ -49,6 +49,7 @@ history and the per-file numbers can only be seen through the tests.
 | Deleted files stay out of the ranking by default | A hotspot is a place, and a file that is gone is not one. The history keeps them behind `include_deleted`. |
 | Frequency must never be reported as importance | The same count comes from core code, from code that keeps breaking, from moving requirements, from a refactor in progress. The tool cannot tell those apart and must not imply it can. |
 | "Which commits touched this name" and "which commits touched this file" stay two questions | They disagree wherever a name was reused, and the fixture shows both directions of the difference. Collapsing them into one would make the tool quietly wrong about either renames or reused names. |
+| Every command that reads the history warns when the snapshot is behind | `timeline` had the warning and the three later commands did not, which is the same silence in a different place. It goes on stderr, so no command's output changes shape. |
 
 ## Traps already found
 
@@ -100,19 +101,20 @@ history and the per-file numbers can only be seen through the tests.
 
 ## Next
 
-1. **`archaeology file <path>`**: the lifecycle's path history and its statistics.
-   That is the last part of the v0.2 model with no command in front of it.
-2. **Co-change**, which the user described as the next thing the commit-file link
+1. **Co-change**, which the user described as the next thing the commit-file link
    makes possible: which files tend to change together. It has not been designed
    yet, and the percentage has to be pinned down first — of a file's commits, of
    the pair's, or of everything — because the three give different numbers.
+2. **`files` and `hotspots` show the same ranking in two shapes.** The user asked
+   for both, so both exist. If one of them should become something else — an
+   inventory including deleted files, say — that is their call.
 3. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 144 tests
+$ uv run pytest                 # 161 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.1, complete.** The four commands below work today. The project
+> **Status: v0.1, complete.** The six commands below work today. The project
 > is not on PyPI yet, so there is no `pip install` for it.
 
 ## Why this project exists
@@ -187,6 +187,53 @@ progress, or from a file that is simply edited often. CodeArchaeology cannot tel
 those apart, so it does not try: it reports how often a file changed and stops
 there.
 
+### List the files
+
+`files` prints the same ranking as a table, one line per file.
+
+```console
+$ archaeology files ~/projects/sample-project
+ FILE                   COMMITS   +LINES   -LINES
+ ────────────────────────────────────────────────
+ core/app.py                  3       19        0
+ README.md                    1        3        0
+ assets/logo.png              1        0        0
+ core/cache.py                1       12        0
+ 工具/文本.py                 1        5        0
+```
+
+`--limit N` and `--all` behave as they do for the timeline.
+
+### Show one file
+
+`file` shows one file's whole life: the names it carried, when it appeared, when
+it was last changed, and what it cost in lines.
+
+```console
+$ archaeology file core/app.py ~/projects/sample-project
+core/app.py
+History:        app.py -> core/app.py
+
+Created:        2024-03-01 09:00:00 +0000  392cc0db
+Last modified:  2024-03-06 09:00:00 +0000  8eaff71d
+
+Commits:        3
+Modifications:  1
+Renames:        1
+Additions:      19
+Deletions:      0
+
+Net change:     +19
+```
+
+The file is found under any name it ever carried, so `file app.py` reaches the
+same one as `file core/app.py`. A name that belonged to more than one file —
+because it was deleted and created again, or renamed away and taken back later —
+prints a block for each of them rather than picking one.
+
+`Last modified` is `-` for a file that was created and never touched: nothing
+modified it, so there is no such time to report.
+
 ### Inspect one commit
 
 `commit` shows one commit in full. A prefix of the sha is enough, as in git.
@@ -244,13 +291,14 @@ command to name the file directly.
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its four commands
+    cli.py          the Typer application and its six commands
     analysis.py     running an analysis: read the repository, write the database
     cache.py        where analysis databases live
     history.py      running git and parsing its output into Commit objects
     storage.py      the SQLite schema and the queries over it
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
+    file.py         the single-file view
     lifecycle.py    rebuilding each file's life from the stored history
     statistics.py   the numbers that summarise one file's life
     hotspots.py     ranking files by how often they change

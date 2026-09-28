@@ -98,6 +98,19 @@ def stale_analysis_note(repository_root, stored_head_sha: str | None) -> str | N
     )
 
 
+def stored_head_sha(repository_root, database) -> str:
+    """Return the commit the stored analysis stops at, or ``""`` if unknown.
+
+    The other half of :func:`stale_analysis_note`: the note needs to know where
+    the snapshot ended before it can say whether the repository has moved past
+    it. Commands that read the history without going through the timeline need
+    this, and opening the database twice is cheaper than making every loader
+    return a pair.
+    """
+    with open_analysis(repository_root, database) as connection:
+        return get_meta(connection, "head_sha") or ""
+
+
 def shallow_clone_note(repository_root) -> str | None:
     """Return a note when *repository_root* is missing part of its history.
 

@@ -11,7 +11,7 @@ from codearchaeology.history import read_commits
 from codearchaeology.hotspots import Hotspot, rank_hotspots
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
 from codearchaeology.statistics import summarize
-from sample_repo import build_lifecycle_repo
+from sample_repo import add_commit, build_lifecycle_repo, build_sample_repo
 
 runner = CliRunner()
 
@@ -175,3 +175,51 @@ def test_command_asks_for_an_analysis_when_there_is_none(
 
     assert result.exit_code == 1
     assert "archaeology analyze" in result.stderr
+
+
+def _run_files(sample_repo: Path, database: Path, *extra: str):
+    return runner.invoke(
+        app, ["files", str(sample_repo), "--db", str(database), *extra]
+    )
+
+
+def test_files_command_prints_a_table(sample_repo: Path, analyzed: Path) -> None:
+    result = _run_files(sample_repo, analyzed)
+
+    assert result.exit_code == 0
+    assert "FILE" in result.stdout
+    assert "COMMITS" in result.stdout
+    assert "+LINES" in result.stdout
+    assert "-LINES" in result.stdout
+    assert "core/app.py" in result.stdout
+    assert "19" in result.stdout
+
+
+def test_files_command_limits_and_says_how_many_are_hidden(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    result = _run_files(sample_repo, analyzed, "--limit", "2")
+
+    assert result.exit_code == 0
+    assert "工具/文本.py" not in result.stdout
+    assert f"{FIXTURE_FILES - 2} more files. Use --all to see them." in result.stdout
+
+
+def test_files_command_all_shows_every_file(sample_repo: Path, analyzed: Path) -> None:
+    result = _run_files(sample_repo, analyzed, "--limit", "2", "--all")
+
+    assert result.exit_code == 0
+    assert "工具/文本.py" in result.stdout
+    assert "more files" not in result.stdout
+
+
+def test_files_command_warns_when_the_analysis_is_behind(tmp_path: Path) -> None:
+    repository = build_sample_repo(tmp_path / "behind")
+    database = tmp_path / "behind.db"
+    analyze(repository, database)
+    add_commit(repository, "A commit made after the analysis")
+
+    result = _run_files(repository, database)
+
+    assert result.exit_code == 0
+    assert "Note: this analysis stops at" in result.stderr

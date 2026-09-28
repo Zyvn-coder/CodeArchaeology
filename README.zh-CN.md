@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.1，已完成。** 下面四个命令现在就能用。项目还没有发布到 PyPI，
+> **状态：v0.1，已完成。** 下面六个命令现在就能用。项目还没有发布到 PyPI，
 > 所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
@@ -177,6 +177,52 @@ Frequent change is not importance: the reason each of these files is busy is not
 的需求、来自正在进行中的重构，也可能只是这个文件被编辑得比较勤。CodeArchaeology
 分不清这些，所以它不去分：它只报告一个文件被改了多少次，到此为止。
 
+### 列出所有文件
+
+`files` 把同一份排名打印成表格，一个文件一行。
+
+```console
+$ archaeology files ~/projects/sample-project
+ FILE                   COMMITS   +LINES   -LINES
+ ────────────────────────────────────────────────
+ core/app.py                  3       19        0
+ README.md                    1        3        0
+ assets/logo.png              1        0        0
+ core/cache.py                1       12        0
+ 工具/文本.py                 1        5        0
+```
+
+`--limit N` 和 `--all` 的行为与时间线一致。
+
+### 查看单个文件
+
+`file` 展示一个文件的完整一生：它用过的名字、何时出现、最后何时被改、以及它消耗了
+多少行。
+
+```console
+$ archaeology file core/app.py ~/projects/sample-project
+core/app.py
+History:        app.py -> core/app.py
+
+Created:        2024-03-01 09:00:00 +0000  392cc0db
+Last modified:  2024-03-06 09:00:00 +0000  8eaff71d
+
+Commits:        3
+Modifications:  1
+Renames:        1
+Additions:      19
+Deletions:      0
+
+Net change:     +19
+```
+
+文件可以用它**任何一个曾用名**找到，所以 `file app.py` 和 `file core/app.py` 指向
+同一个文件。如果一个名字曾经属于多个文件（被删除后重建，或者改名离开后名字又被收回），
+它会**各打印一块**，而不是替你挑一个。
+
+对创建之后从未被修改过的文件，`Last modified` 显示 `-`：没有任何东西修改过它，
+所以没有这样一个时间可报。
+
 ### 查看单个提交
 
 `commit` 完整展示一个提交。sha 给前缀就够，和 git 的习惯一致。
@@ -231,13 +277,14 @@ No file changes recorded (git prints no diff for a merge commit).
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与四个命令
+    cli.py          Typer 应用与六个命令
     analysis.py     一次分析：读仓库、写数据库
     cache.py        分析数据库放在哪
     history.py      调用 git 并把它的输出解析成 Commit 对象
     storage.py      SQLite 表结构与查询
     timeline.py     时间线视图：行数据、表格、JSON
     commit.py       单个提交的视图
+    file.py         单个文件的视图
     lifecycle.py    从存下来的历史里重建每个文件的一辈子
     statistics.py   汇总一个文件一辈子的那些数字
     hotspots.py     按改动频繁程度给文件排名

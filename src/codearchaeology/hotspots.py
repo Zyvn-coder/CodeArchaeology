@@ -19,13 +19,28 @@ Ranking is by the number of commits that touched a file, which is the steadier
 of the two signals: additions and deletions are dominated by generated files and
 move with the rename threshold. Both are reported, so a caller who wants the
 other ranking can sort by it.
+
+The ranking is what two commands show. ``hotspots`` prints it as blocks, one file
+at a time; ``files`` prints the same rows as a table. They read the same numbers
+and differ only in shape.
 """
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from rich import box
+from rich.table import Table
+
+from codearchaeology.formatting import shorten
 from codearchaeology.lifecycle import Lifecycle
 from codearchaeology.statistics import summarize
+
+PATH_MINIMUM_WIDTH = 20
+COMMITS_WIDTH = len("COMMITS")
+LINES_WIDTH = len("+LINES")
+COLUMN_PADDING = 10
+COLUMN_SLACK = 5
+FIXED_WIDTH = COMMITS_WIDTH + LINES_WIDTH * 2 + COLUMN_PADDING + COLUMN_SLACK
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,3 +92,29 @@ def rank_hotspots(
     # same list, whatever order the lives arrived in.
     rows.sort(key=lambda row: (-row.commits, row.current_path))
     return tuple(rows)
+
+
+def build_table(rows: Iterable[Hotspot], width: int) -> Table:
+    """Render the ranking as a Rich table, one line per file.
+
+    The path is cut to whatever the terminal has left over, for the same reason
+    the timeline cuts its message: a long path would otherwise squeeze the other
+    columns out of existence. The cut width is a ceiling, not a floor, so a
+    repository of short names gets a narrow column rather than a wide gutter.
+    """
+    path_width = max(PATH_MINIMUM_WIDTH, width - FIXED_WIDTH)
+
+    table = Table(box=box.SIMPLE, header_style="bold", pad_edge=False)
+    table.add_column("FILE", no_wrap=True, min_width=PATH_MINIMUM_WIDTH)
+    table.add_column("COMMITS", justify="right", no_wrap=True, min_width=COMMITS_WIDTH)
+    table.add_column("+LINES", justify="right", no_wrap=True, min_width=LINES_WIDTH)
+    table.add_column("-LINES", justify="right", no_wrap=True, min_width=LINES_WIDTH)
+
+    for row in rows:
+        table.add_row(
+            shorten(row.current_path, path_width),
+            str(row.commits),
+            str(row.additions),
+            str(row.deletions),
+        )
+    return table
