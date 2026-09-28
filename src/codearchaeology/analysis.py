@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from codearchaeology.cache import database_path
+from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import (
     GitError,
     find_repository_root,
@@ -14,6 +15,7 @@ from codearchaeology.history import (
     read_head_sha,
 )
 from codearchaeology.storage import (
+    SCHEMA_VERSION,
     clear_history,
     connect,
     create_schema,
@@ -32,7 +34,8 @@ def open_analysis(repository_root, database):
     """Open the stored analysis of *repository_root* and hand out a connection.
 
     Raises :class:`AnalysisError` naming what is missing: no database file, one
-    that was never filled in, or one holding a different repository.
+    that was never filled in, one holding a different repository, or one written
+    by a schema version this code does not read.
     """
     database = Path(database)
     expected_root = str(Path(repository_root).resolve())
@@ -50,9 +53,48 @@ def open_analysis(repository_root, database):
                 f"{database} holds {stored_root}, not {expected_root};"
                 f" run 'archaeology analyze {expected_root}' to replace it"
             )
+
+        # Checked before anything reads a table: a database from another schema
+        # version would otherwise fail deeper down with a raw sqlite error about
+        # a missing column, which tells the user nothing they can act on.
+        stored_version = get_meta(connection, "schema_version")
+        if stored_version != SCHEMA_VERSION:
+            raise AnalysisError(
+                f"{database} was written with schema version"
+                f" {stored_version or 'unknown'}, and this version of archaeology"
+                f" reads {SCHEMA_VERSION};"
+                f" run 'archaeology analyze {expected_root}' to rebuild it"
+            )
+
         yield connection
     finally:
         connection.close()
+
+
+def stale_analysis_note(repository_root, stored_head_sha: str | None) -> str | None:
+    """Return a note when *repository_root* has moved past the stored analysis.
+
+    The stored history is not wrong, only incomplete, so reading it stays
+    allowed: callers print the note instead of refusing to work. A repository
+    that can no longer be read is not a reason to hide the stored history
+    either, which is why the git call is allowed to fail quietly.
+    """
+    if not stored_head_sha:
+        return None
+
+    try:
+        current_head = read_head_sha(repository_root)
+    except GitError:
+        return None
+
+    if current_head == stored_head_sha:
+        return None
+
+    return (
+        f"Note: this analysis stops at {stored_head_sha[:SHORT_SHA_LENGTH]},"
+        f" but HEAD is now {current_head[:SHORT_SHA_LENGTH]};"
+        f" run 'archaeology analyze {repository_root}' to refresh it"
+    )
 
 
 @dataclass(frozen=True, slots=True)

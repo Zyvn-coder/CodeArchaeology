@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 
 from codearchaeology import __version__
-from codearchaeology.analysis import AnalysisError
+from codearchaeology.analysis import AnalysisError, stale_analysis_note
 from codearchaeology.analysis import analyze as run_analysis
 from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
@@ -106,6 +106,12 @@ def timeline(
     except (GitError, AnalysisError) as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
+
+    # On stderr, and before the branch below, so that --json keeps stdout
+    # parseable while still warning anyone reading the command by eye.
+    note = stale_analysis_note(repository_root, stored.head_sha)
+    if note:
+        typer.echo(note, err=True)
 
     selected = None if show_all else limit
 

@@ -36,6 +36,7 @@ CACHE_DATE = "2024-03-05T09:00:00+00:00"
 FIX_DATE = "2024-03-06T09:00:00+00:00"
 MERGE_DATE = "2024-03-08T09:00:00+00:00"
 FINAL_DATE = "2024-03-10T09:00:00+00:00"
+LATER_DATE = "2024-03-12T09:00:00+00:00"
 
 README = """\
 # sample project
@@ -216,6 +217,18 @@ def build_single_commit_repo(destination, message="Only commit"):
     _commit(repo, INITIAL_DATE, message)
 
     return repo
+
+
+def add_commit(repo, message, timestamp=LATER_DATE):
+    """Append one commit to an existing repository and return its sha.
+
+    A test that needs the repository to move past an analysis uses this. It
+    writes to the caller's own repository rather than to the shared fixture, so
+    the fixture stays at its six commits for every other test.
+    """
+    _write_file(repo, "extra.txt", f"{message}\n")
+    _commit(repo, timestamp, message)
+    return git_output(repo, "rev-parse", "HEAD").strip()
 
 
 if __name__ == "__main__":

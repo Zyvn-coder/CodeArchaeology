@@ -4,8 +4,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.1, in development.** The three commands below work today. The
-> project is not packaged or published yet, so there is no `pip install` for it.
+> **Status: v0.1, complete.** The three commands below work today. The project
+> is not on PyPI yet, so there is no `pip install` for it.
 
 ## Why this project exists
 
@@ -115,6 +115,30 @@ $ archaeology timeline --json --limit 1
 }
 ```
 
+### When the analysis is behind
+
+`analyze` takes a snapshot. If the repository gains commits afterwards, the
+snapshot is still true but no longer complete, so `timeline` says so. The note
+goes to stderr, which keeps stdout parseable for `--json`:
+
+```console
+$ archaeology timeline --limit 2
+Note: this analysis stops at 78c0647a, but HEAD is now a80420c9; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Repository  /home/you/projects/sample-project
+Commits     6 (9 file changes)
+Range       2024-03-01 to 2024-03-10
+HEAD        78c0647a
+
+ SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
+ ──────────────────────────────────────────────────────────────────────────────────────────
+ 78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
+ bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
+
+4 more commits. Use --all to see them.
+```
+
+The exit code stays 0: the stored history is readable, it is only behind.
+
 ### Inspect one commit
 
 `commit` shows one commit in full. A prefix of the sha is enough, as in git.
@@ -205,7 +229,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 
 | Stage | What it adds | Status |
 |---|---|---|
-| v0.1 | Git scan, commit history, diffs, SQLite storage, CLI timeline | In development |
+| v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
 | v0.2 | File lifecycle, code hotspots | Planned |
 | v0.3 | AST analysis, function and class evolution | Planned |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
@@ -229,7 +253,7 @@ stage is stable.
   branch name.
 - The database is keyed on the repository's absolute path, so moving or renaming
   a repository means analyzing it again.
-- Only tested on Windows so far.
+- Tested on Linux and Windows, on Python 3.11 and 3.13, by CI. macOS is untested.
 
 ## License
 

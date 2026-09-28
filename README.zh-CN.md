@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.1，开发中。** 下面三个命令现在就能用。项目还没有打包发布，
+> **状态：v0.1，已完成。** 下面三个命令现在就能用。项目还没有发布到 PyPI，
 > 所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
@@ -110,6 +110,30 @@ $ archaeology timeline --json --limit 1
 }
 ```
 
+### 当分析结果已经过期
+
+`analyze` 取的是一份快照。如果之后仓库又有了新提交，这份快照本身没错，只是不再
+完整，所以 `timeline` 会告诉你。提示走 stderr，因此 `--json` 的 stdout 依然可以
+被程序解析：
+
+```console
+$ archaeology timeline --limit 2
+Note: this analysis stops at 78c0647a, but HEAD is now a80420c9; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Repository  /home/you/projects/sample-project
+Commits     6 (9 file changes)
+Range       2024-03-01 to 2024-03-10
+HEAD        78c0647a
+
+ SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
+ ──────────────────────────────────────────────────────────────────────────────────────────
+ 78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
+ bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
+
+4 more commits. Use --all to see them.
+```
+
+退出码仍然是 0：存下来的历史读得出来，只是落后了。
+
 ### 查看单个提交
 
 `commit` 完整展示一个提交。sha 给前缀就够，和 git 的习惯一致。
@@ -195,7 +219,7 @@ tests/
 
 | 阶段 | 增加什么 | 状态 |
 |---|---|---|
-| v0.1 | Git 扫描、提交历史、Diff、SQLite 存储、CLI 时间线 | 开发中 |
+| v0.1 | Git 扫描、提交历史、文件改动、SQLite 存储、CLI 时间线 | 已完成 |
 | v0.2 | 文件生命周期、代码热点 | 计划中 |
 | v0.3 | AST 分析、函数与类的演化 | 计划中 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 计划中 |
@@ -213,7 +237,7 @@ tests/
 - 不读取也不保存 patch 内容，所以工具从不显示 diff 正文，只显示改动文件和行数。
 - `commit` 只接受 sha 和 sha 前缀，不接受 `HEAD`、分支名这类引用。
 - 数据库以仓库绝对路径为键，所以移动或重命名仓库后需要重新分析。
-- 目前只在 Windows 上验证过。
+- 由 CI 在 Linux 与 Windows、Python 3.11 与 3.13 下验证；macOS 尚未验证。
 
 ## 许可证
 

@@ -13,7 +13,8 @@ from codearchaeology.cli import app
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import read_head_sha
 from codearchaeology.timeline import Timeline, build_table, load_timeline
-from sample_repo import build_single_commit_repo
+from codearchaeology.storage import connect, set_meta
+from sample_repo import add_commit, build_single_commit_repo
 
 runner = CliRunner()
 
@@ -39,6 +40,19 @@ def _render(rows, width: int = 80) -> str:
     return stream.getvalue()
 
 
+def _set_schema_version(database: Path, version: str | None) -> None:
+    """Pretend *database* was written by another version of the tool."""
+    connection = connect(database)
+    try:
+        if version is None:
+            connection.execute("DELETE FROM meta WHERE key = 'schema_version'")
+            connection.commit()
+        else:
+            set_meta(connection, "schema_version", version)
+    finally:
+        connection.close()
+
+
 def test_loads_the_stored_history(stored: Timeline, sample_repo: Path) -> None:
     assert stored.repository_root == sample_repo.resolve()
     assert len(stored.commits) == FIXTURE_COMMITS
@@ -56,6 +70,26 @@ def test_database_holding_another_repository_is_rejected(
     analyze(build_single_commit_repo(tmp_path / "other"), database)
 
     with pytest.raises(AnalysisError, match="holds"):
+        load_timeline(sample_repo.resolve(), database)
+
+
+def test_database_from_another_schema_version_is_rejected(
+    sample_repo: Path, database: Path
+) -> None:
+    analyze(sample_repo, database)
+    _set_schema_version(database, "0")
+
+    with pytest.raises(AnalysisError, match="schema version"):
+        load_timeline(sample_repo.resolve(), database)
+
+
+def test_database_without_a_schema_version_is_rejected(
+    sample_repo: Path, database: Path
+) -> None:
+    analyze(sample_repo, database)
+    _set_schema_version(database, None)
+
+    with pytest.raises(AnalysisError, match="unknown"):
         load_timeline(sample_repo.resolve(), database)
 
 
@@ -166,12 +200,66 @@ def test_command_json_output_stays_parseable(sample_repo: Path, database: Path) 
     assert len(json.loads(result.stdout)["commits"]) == FIXTURE_COMMITS
 
 
+def test_command_stays_quiet_while_the_analysis_is_current(
+    sample_repo: Path, database: Path
+) -> None:
+    analyze(sample_repo, database)
+
+    result = runner.invoke(app, ["timeline", str(sample_repo), "--db", str(database)])
+
+    assert result.exit_code == 0
+    assert "Note:" not in result.stderr
+
+
+def test_command_warns_when_the_analysis_is_behind(tmp_path: Path) -> None:
+    repository = build_single_commit_repo(tmp_path / "behind")
+    database = tmp_path / "behind.db"
+    analyze(repository, database)
+    added = add_commit(repository, "A commit made after the analysis")
+
+    result = runner.invoke(app, ["timeline", str(repository), "--db", str(database)])
+
+    assert result.exit_code == 0
+    assert "Note: this analysis stops at" in result.stderr
+    assert added[:SHORT_SHA_LENGTH] in result.stderr
+
+
+def test_json_keeps_stdout_parseable_when_the_analysis_is_behind(
+    tmp_path: Path,
+) -> None:
+    repository = build_single_commit_repo(tmp_path / "behind")
+    database = tmp_path / "behind.db"
+    analyze(repository, database)
+    add_commit(repository, "A commit made after the analysis")
+
+    result = runner.invoke(
+        app, ["timeline", str(repository), "--db", str(database), "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["repository"]
+    assert "Note: this analysis stops at" in result.stderr
+
+
 def test_command_asks_for_an_analysis_when_there_is_none(
     sample_repo: Path, database: Path
 ) -> None:
     result = runner.invoke(app, ["timeline", str(sample_repo), "--db", str(database)])
 
     assert result.exit_code == 1
+    assert "archaeology analyze" in result.stderr
+
+
+def test_command_reports_a_schema_version_it_cannot_read(
+    sample_repo: Path, database: Path
+) -> None:
+    analyze(sample_repo, database)
+    _set_schema_version(database, "0")
+
+    result = runner.invoke(app, ["timeline", str(sample_repo), "--db", str(database)])
+
+    assert result.exit_code == 1
+    assert "schema version" in result.stderr
     assert "archaeology analyze" in result.stderr
 
 

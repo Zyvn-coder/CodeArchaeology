@@ -5,12 +5,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from codearchaeology.analysis import analyze
+from codearchaeology.analysis import analyze, stale_analysis_note
 from codearchaeology.cache import CACHE_DIRECTORY_VARIABLE, cache_directory, database_path
 from codearchaeology.cli import app
+from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import Commit, GitError, read_commits, read_head_sha
 from codearchaeology.storage import connect, get_meta, read_stored_commits
-from sample_repo import build_single_commit_repo
+from sample_repo import add_commit, build_single_commit_repo
 
 runner = CliRunner()
 
@@ -110,6 +111,43 @@ def test_database_path_lives_in_the_cache_directory(
 
     assert cache_directory() == tmp_path / "cache"
     assert database_path(tmp_path).parent == tmp_path / "cache"
+
+
+def test_no_note_while_the_analysis_is_current(
+    sample_repo: Path, database: Path
+) -> None:
+    result = analyze(sample_repo, database)
+
+    assert stale_analysis_note(sample_repo, result.head_sha) is None
+
+
+def test_note_names_both_ends_once_the_repository_moves_on(tmp_path: Path) -> None:
+    repository = build_single_commit_repo(tmp_path / "moving")
+    database = tmp_path / "history.db"
+    result = analyze(repository, database)
+
+    added = add_commit(repository, "A commit made after the analysis")
+
+    note = stale_analysis_note(repository, result.head_sha)
+
+    assert note is not None
+    assert result.head_sha[:SHORT_SHA_LENGTH] in note
+    assert added[:SHORT_SHA_LENGTH] in note
+    assert "archaeology analyze" in note
+
+
+def test_no_note_without_a_stored_head(tmp_path: Path) -> None:
+    repository = build_single_commit_repo(tmp_path / "headless")
+
+    assert stale_analysis_note(repository, None) is None
+    assert stale_analysis_note(repository, "") is None
+
+
+def test_no_note_when_the_repository_cannot_be_read(tmp_path: Path) -> None:
+    plain = tmp_path / "not-a-repository"
+    plain.mkdir()
+
+    assert stale_analysis_note(plain, "0" * 40) is None
 
 
 def test_command_prints_a_summary(sample_repo: Path, database: Path) -> None:
