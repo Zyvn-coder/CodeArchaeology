@@ -85,7 +85,11 @@ so the whole read side of the CLI is now machine-readable.
 6. **A path can belong to several lifecycles.** Any lookup by path has to say
    which one it means; tests use a `_lives_of(...)[index]` helper for this.
 7. **`grep` in this shell is `ugrep`, not GNU grep.** A line-ending measurement
-   was wrong because of it. Use `git ls-files --eol` for that question instead.
+   was wrong because of it. It then went wrong a second time, in a way that reads
+   as a repository-wide defect: `git show <rev>:<path> | grep -c $'\r'` reported
+   every line of files that are stored as LF as CRLF. For this question use
+   `git ls-files --eol`, or compare blob hashes — `git rev-parse <rev>:<path>`
+   against the sha1 of `blob <length>\0<bytes>`. Both are tool-independent.
 8. **A test that names a fixture must take it as a parameter.** Naming it only in
    the body silently refers to the fixture *function*, and the assertion then
    compares against a function object.
