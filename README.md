@@ -46,6 +46,11 @@ Every command takes a directory inside the repository, defaulting to the current
 directory. None of them ever writes to the repository: the analysis goes into a
 database in your cache directory.
 
+Every command that reads the history takes `--json`, which prints the same facts
+in the same names for other programs to read. Only the JSON goes to stdout — the
+note about a stale analysis goes to stderr — so the output stays parseable
+whether or not the snapshot is current.
+
 ### Analyze a repository
 
 `analyze` reads the whole history and stores it.
@@ -181,6 +186,9 @@ Frequent change is not importance: the reason each of these files is busy is not
 one. Files that have been deleted are left out, because a hotspot is a place and
 a file that is gone is no longer one.
 
+`--json` prints the ranking for other programs to read; the shape is shown under
+`files` below, and `files --json` prints exactly the same bytes.
+
 **A hotspot is not a verdict.** The same count can come from core code, from code
 that keeps breaking, from requirements that keep moving, from a refactor in
 progress, or from a file that is simply edited often. CodeArchaeology cannot tell
@@ -203,6 +211,42 @@ $ archaeology files ~/projects/sample-project
 ```
 
 `--limit N` and `--all` behave as they do for the timeline.
+
+`--json` prints the ranking for other programs to read. Every row carries the
+names it was counted over, because a row is counted by identity: without the
+chain, a renamed file and two unrelated ones cannot be told apart.
+
+```console
+$ archaeology files --json --limit 2 ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "files": [
+    {
+      "path": "core/app.py",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ]
+    },
+    {
+      "path": "README.md",
+      "commits": 1,
+      "additions": 3,
+      "deletions": 0,
+      "path_history": [
+        "README.md"
+      ]
+    }
+  ]
+}
+```
+
+The caveat the `hotspots` command prints is a sentence for a reader, so it is not
+in the JSON. The count is the same either way.
 
 ### Show one file
 
@@ -233,6 +277,46 @@ prints a block for each of them rather than picking one.
 
 `Last modified` is `-` for a file that was created and never touched: nothing
 modified it, so there is no such time to report.
+
+`--json` prints the same facts. It is an object holding a list, even when the
+name belongs to a single file, so the shape does not change with the history:
+
+```console
+$ archaeology file core/app.py --json ~/projects/sample-project
+{
+  "path": "core/app.py",
+  "files": [
+    {
+      "path": "core/app.py",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "renames": 1,
+      "deleted": false,
+      "created_at": "2024-03-01T09:00:00+00:00",
+      "created_sha": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+      "last_modified_at": "2024-03-06T09:00:00+00:00",
+      "last_modified_sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+      "deleted_at": null,
+      "deleted_sha": null,
+      "modifications": 1,
+      "binary_changes": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ],
+      "net_change": 19
+    }
+  ]
+}
+```
+
+`path` at the top is the name that was asked for; each entry's `path` is what
+that file is called now. They differ exactly when the file was renamed. A time
+the file never had is `null`, not a substitute — a file that was created and
+never edited has no `last_modified_at`, and a file that is still there has no
+`deleted_at`. Timestamps keep the UTC offset of the machine that made the commit,
+because a commit's time means nothing without it.
 
 ### Inspect one commit
 
@@ -298,10 +382,10 @@ src/codearchaeology/
     storage.py      the SQLite schema and the queries over it
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
-    file.py         the single-file view
+    file.py         the single-file view: block and JSON
     lifecycle.py    rebuilding each file's life from the stored history
     statistics.py   the numbers that summarise one file's life
-    hotspots.py     ranking files by how often they change
+    hotspots.py     ranking files by how often they change, and its two views
     relationships.py  commits and files, read from either end
     formatting.py   small helpers shared by the two views
 tests/

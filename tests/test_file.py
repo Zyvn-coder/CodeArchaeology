@@ -1,5 +1,6 @@
 """Tests for the single-file view and its command."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ from typer.testing import CliRunner
 
 from codearchaeology.analysis import analyze
 from codearchaeology.cli import app
-from codearchaeology.file import build_block, find_files, normalise
+from codearchaeology.file import build_block, build_object, find_files, normalise
 from codearchaeology.history import read_commits
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
 from sample_repo import add_commit, build_lifecycle_repo, build_sample_repo
@@ -160,3 +161,126 @@ def test_command_warns_when_the_analysis_is_behind(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Note: this analysis stops at" in result.stderr
+
+
+def test_json_reports_the_fields_the_example_named(lives) -> None:
+    """The six fields other programs are promised, with their names and types."""
+    plain = find_files(lives, "plain.py")[0]
+
+    reported = build_object(plain)
+
+    assert reported["path"] == "plain.py"
+    assert reported["commits"] == 2
+    assert reported["additions"] == 8
+    assert reported["deletions"] == 1
+    assert reported["renames"] == 0
+    assert reported["deleted"] is False
+
+
+def test_json_carries_the_rest_of_the_model(lives) -> None:
+    """The block is the whole of what the model knows, and the JSON is the same
+    facts, so the fields the block prints have to be in it too."""
+    first_app = find_files(lives, "src/core/app.py")[0]
+
+    reported = build_object(first_app)
+
+    assert reported["path_history"] == ["app.py", "src/app.py", "src/core/app.py"]
+    assert reported["net_change"] == reported["additions"] - reported["deletions"]
+    assert reported["created_sha"] == first_app.created.commit_sha
+    assert reported["deleted"] is True
+    assert reported["deleted_sha"] == first_app.deleted.commit_sha
+    # Created, moved twice without the content changing, then deleted: no event
+    # in this file's life ever edited a line of it.
+    assert reported["modifications"] == 0
+    assert reported["last_modified_at"] is None
+
+
+def test_json_keeps_the_utc_offset(lives) -> None:
+    """A commit's time is only meaningful with its offset, so a timestamp
+    without one would be a different fact from the one git reported."""
+    plain = find_files(lives, "plain.py")[0]
+
+    reported = build_object(plain)
+
+    assert reported["created_at"] == "2024-05-01T09:00:00+00:00"
+
+
+def test_json_says_null_rather_than_inventing_a_time(lives) -> None:
+    """``kept.py`` was renamed but never edited, and is still there: there is no
+    last-modified time and no death, and neither may be filled in."""
+    kept = find_files(lives, "kept.py")[0]
+
+    reported = build_object(kept)
+
+    assert reported["last_modified_at"] is None
+    assert reported["last_modified_sha"] is None
+    assert reported["deleted_at"] is None
+    assert reported["deleted_sha"] is None
+
+
+def test_json_agrees_with_the_block(lives) -> None:
+    """The two renderings read the same model, so they have to say the same
+    numbers. Compared against each other rather than against a third copy."""
+    plain = find_files(lives, "plain.py")[0]
+
+    block = build_block(plain)
+    reported = build_object(plain)
+
+    assert _value(block, "Commits:") == str(reported["commits"])
+    assert _value(block, "Modifications:") == str(reported["modifications"])
+    assert _value(block, "Renames:") == str(reported["renames"])
+    assert _value(block, "Additions:") == str(reported["additions"])
+    assert _value(block, "Deletions:") == str(reported["deletions"])
+    assert _value(block, "Net change:") == f"{reported['net_change']:+d}"
+
+
+def test_command_json_is_the_only_thing_on_stdout(
+    repository: Path, database: Path
+) -> None:
+    result = _run(repository, database, "src/core/app.py", "--json")
+
+    assert result.exit_code == 0
+    reported = json.loads(result.stdout)
+    assert reported["path"] == "src/core/app.py"
+    assert len(reported["files"]) == 1
+
+
+def test_command_json_lists_every_file_that_carried_a_reused_name(
+    repository: Path, database: Path
+) -> None:
+    """The shape does not depend on the history: a name that belonged to two
+    files gives two entries, not a bare object and then a list."""
+    result = _run(repository, database, "app.py", "--json")
+
+    reported = json.loads(result.stdout)
+
+    assert len(reported["files"]) == 2
+    assert {entry["path"] for entry in reported["files"]} == {
+        "app.py",
+        "src/core/app.py",
+    }
+
+
+def test_command_json_stays_parseable_when_the_analysis_is_behind(
+    tmp_path: Path,
+) -> None:
+    """The warning goes to stderr, so a program reading stdout never sees it."""
+    repository = build_lifecycle_repo(tmp_path / "json-behind")
+    database = tmp_path / "json-behind.db"
+    analyze(repository, database)
+    add_commit(repository, "A commit made after the analysis")
+
+    result = _run(repository, database, "plain.py", "--json")
+
+    assert "Note: this analysis stops at" in result.stderr
+    assert json.loads(result.stdout)["files"][0]["path"] == "plain.py"
+
+
+def test_command_json_explains_a_file_it_has_never_seen(
+    repository: Path, database: Path
+) -> None:
+    result = _run(repository, database, "nowhere/at/all.py", "--json")
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "nothing in the stored history touched" in result.stderr

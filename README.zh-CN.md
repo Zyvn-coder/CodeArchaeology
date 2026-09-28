@@ -44,6 +44,10 @@ archaeology 0.1.0
 所有命令都接受一个"仓库内的目录"作为参数，默认是当前目录。**它们都不会往被分析的
 仓库里写任何东西**——分析结果写进你缓存目录里的数据库。
 
+每条读取历史的命令都支持 `--json`，用同样的字段名把同样的事实输出给别的程序读。
+stdout 上只有 JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是最新的，
+输出都能被解析。
+
 ### 分析一个仓库
 
 `analyze` 读取全部历史并存下来。
@@ -173,6 +177,9 @@ Frequent change is not importance: the reason each of these files is busy is not
 `--limit N` 少显示几个，并告诉你还剩多少。`--all` 显示全部。已被删除的文件不在榜单
 里 —— 热点是一个「地方」，而已经不存在的文件不再是地方。
 
+`--json` 把这份排名输出给别的程序读，形状见下面 `files` 一节；`files --json` 输出的
+是**逐字节相同**的内容。
+
 **热点不是判决。** 同一个数字可能来自核心代码、来自不断出问题的代码、来自反复变动
 的需求、来自正在进行中的重构，也可能只是这个文件被编辑得比较勤。CodeArchaeology
 分不清这些，所以它不去分：它只报告一个文件被改了多少次，到此为止。
@@ -193,6 +200,41 @@ $ archaeology files ~/projects/sample-project
 ```
 
 `--limit N` 和 `--all` 的行为与时间线一致。
+
+`--json` 把这份排名输出给别的程序读。每一行都带上它计数时覆盖的那些名字，因为一行是
+按**身份**计数的：没有这条改名链，就没法区分「一个改过名的文件」和「两个不相干的
+文件」。
+
+```console
+$ archaeology files --json --limit 2 ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "files": [
+    {
+      "path": "core/app.py",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ]
+    },
+    {
+      "path": "README.md",
+      "commits": 1,
+      "additions": 3,
+      "deletions": 0,
+      "path_history": [
+        "README.md"
+      ]
+    }
+  ]
+}
+```
+
+`hotspots` 命令打印的那句提醒是说给人听的话，所以不在 JSON 里。数字两边完全一样。
 
 ### 查看单个文件
 
@@ -222,6 +264,44 @@ Net change:     +19
 
 对创建之后从未被修改过的文件，`Last modified` 显示 `-`：没有任何东西修改过它，
 所以没有这样一个时间可报。
+
+`--json` 输出的是同一批事实。它永远是一个「装着列表的对象」，哪怕这个名字只属于一个
+文件——形状不随历史变化：
+
+```console
+$ archaeology file core/app.py --json ~/projects/sample-project
+{
+  "path": "core/app.py",
+  "files": [
+    {
+      "path": "core/app.py",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "renames": 1,
+      "deleted": false,
+      "created_at": "2024-03-01T09:00:00+00:00",
+      "created_sha": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+      "last_modified_at": "2024-03-06T09:00:00+00:00",
+      "last_modified_sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+      "deleted_at": null,
+      "deleted_sha": null,
+      "modifications": 1,
+      "binary_changes": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ],
+      "net_change": 19
+    }
+  ]
+}
+```
+
+最外层的 `path` 是**你问的那个名字**，每一项里的 `path` 是那个文件**现在叫什么**。
+两者不同，正好说明这个文件改过名。文件从来没有过的时间是 `null`，不用别的值顶替——
+创建后从未被编辑的文件没有 `last_modified_at`，还活着的文件没有 `deleted_at`。时间戳
+保留提交者所在机器当时的时区偏移量，因为一个提交的时间离开了偏移量就没有意义。
 
 ### 查看单个提交
 
@@ -284,10 +364,10 @@ src/codearchaeology/
     storage.py      SQLite 表结构与查询
     timeline.py     时间线视图：行数据、表格、JSON
     commit.py       单个提交的视图
-    file.py         单个文件的视图
+    file.py         单个文件的视图：文本块与 JSON
     lifecycle.py    从存下来的历史里重建每个文件的一辈子
     statistics.py   汇总一个文件一辈子的那些数字
-    hotspots.py     按改动频繁程度给文件排名
+    hotspots.py     按改动频繁程度给文件排名，以及它的两种呈现
     relationships.py 提交与文件的关系，从任一端都能读
     formatting.py   两个视图共用的小工具
 tests/

@@ -1,5 +1,6 @@
 """Tests for ranking files by how often they change."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from typer.testing import CliRunner
 from codearchaeology.analysis import analyze
 from codearchaeology.cli import app
 from codearchaeology.history import read_commits
-from codearchaeology.hotspots import Hotspot, rank_hotspots
+from codearchaeology.hotspots import Hotspot, build_json, rank_hotspots
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
 from codearchaeology.statistics import summarize
 from sample_repo import add_commit, build_lifecycle_repo, build_sample_repo
@@ -223,3 +224,75 @@ def test_files_command_warns_when_the_analysis_is_behind(tmp_path: Path) -> None
 
     assert result.exit_code == 0
     assert "Note: this analysis stops at" in result.stderr
+
+
+def test_json_reports_the_ranking_in_order(ranking) -> None:
+    reported = json.loads(build_json(ranking, "/tmp/wherever", "abc123"))
+
+    assert [entry["path"] for entry in reported["files"]] == [
+        row.current_path for row in ranking
+    ]
+    assert reported["head_sha"] == "abc123"
+    assert reported["files"][0]["commits"] == ranking[0].commits
+
+
+def test_json_row_carries_the_names_the_count_covers(ranking) -> None:
+    """A row is counted by identity, so the path alone does not say which names
+    the count is over. Without the chain, two rows cannot be told from one file
+    that was renamed."""
+    reused = _by_path(ranking)["reused.py"]
+
+    reported = json.loads(build_json([reused], "/tmp/wherever", "abc123"))
+
+    assert reported["files"][0]["path_history"] == ["kept.py", "reused.py"]
+
+
+def test_files_and_hotspots_json_are_the_same_bytes(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    """The two commands differ only in how the terminal draws the ranking, and
+    JSON is not a terminal drawing, so they must not differ here."""
+    from_files = _run_files(sample_repo, analyzed, "--json")
+    from_hotspots = _run(sample_repo, analyzed, "--json")
+
+    assert from_files.exit_code == 0
+    assert from_hotspots.exit_code == 0
+    assert from_files.stdout == from_hotspots.stdout
+
+
+def test_files_json_is_parseable_and_limited(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    result = _run_files(sample_repo, analyzed, "--limit", "2", "--json")
+
+    reported = json.loads(result.stdout)
+
+    assert len(reported["files"]) == 2
+    assert reported["files"][0]["path"] == "core/app.py"
+    assert reported["files"][0]["commits"] == 3
+
+
+def test_files_json_leaves_out_the_note_the_table_prints(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    """``hotspots`` ends by saying a count is not importance. That is a sentence
+    for a reader, and stdout has to stay parseable."""
+    result = _run(sample_repo, analyzed, "--json")
+
+    assert "Frequent change" not in result.stdout
+    assert "more files" not in result.stdout
+    assert json.loads(result.stdout)
+
+
+def test_files_json_stays_parseable_when_the_analysis_is_behind(
+    tmp_path: Path,
+) -> None:
+    repository = build_sample_repo(tmp_path / "json-behind")
+    database = tmp_path / "json-behind.db"
+    analyze(repository, database)
+    add_commit(repository, "A commit made after the analysis")
+
+    result = _run_files(repository, database, "--json")
+
+    assert "Note: this analysis stops at" in result.stderr
+    assert json.loads(result.stdout)["files"]

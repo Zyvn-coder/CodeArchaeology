@@ -10,7 +10,8 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing the project at commit `a83a0eb`.**
+**Last updated: 2026-09-28, describing commit `c111281` plus the `--json` work
+that is in the working tree but not committed yet.**
 
 ## Where the project stands
 
@@ -28,9 +29,15 @@ see it**. Four units in a row were spent on models that no command reads yet:
 | 4 | `hotspots.py`, and the `hotspots` command that prints the ranking | yes |
 | 5 | `relationships.py` — commits and files, read from either end | no |
 | 6 | the `file` and `files` commands, and `file.py` behind the first | yes |
+| JSON | `--json` on `file`, `files` and `hotspots` | yes |
 
 Every part of the v0.2 model now has a command in front of it. `analyze` fills
 the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
+
+The `--json` row has no unit number because the user asked for it as a standing
+principle rather than as a numbered unit: "CLI → JSON → Web UI → AI". `timeline`
+already had `--json` from v0.1; this added it to the three commands v0.2 brought,
+so the whole read side of the CLI is now machine-readable.
 
 ## Decisions and why
 
@@ -50,6 +57,13 @@ the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
 | Frequency must never be reported as importance | The same count comes from core code, from code that keeps breaking, from moving requirements, from a refactor in progress. The tool cannot tell those apart and must not imply it can. |
 | "Which commits touched this name" and "which commits touched this file" stay two questions | They disagree wherever a name was reused, and the fixture shows both directions of the difference. Collapsing them into one would make the tool quietly wrong about either renames or reused names. |
 | Every command that reads the history warns when the snapshot is behind | `timeline` had the warning and the three later commands did not, which is the same silence in a different place. It goes on stderr, so no command's output changes shape. |
+| JSON carries the same facts, not a summary of them | The user's example listed six fields; the block prints more. Handing a program less than the terminal gets would make the JSON the place where facts go missing, so it carries everything the block shows, under the names the user wrote. |
+| `file --json` is always an object holding a list | A name can belong to several files, so the answer cannot be the bare object without the shape depending on the repository. A reader that had to work out which of the two it got would be a reader that can be wrong. |
+| `files --json` and `hotspots --json` emit identical bytes | The two commands differ only in how the terminal draws the ranking, and JSON is not a terminal drawing. Giving each its own key would make a consumer's code depend on which command it called. |
+| The "frequency is not importance" sentence is not in the JSON | It is prose for a reader. stdout has to stay parseable, and the count means the same thing either way. |
+| `deleted` is a flag rather than a null date to infer from | A reader that only wants to know whether the file is still there should not have to work out that `deleted_at: null` means "alive". |
+| A timestamp is `isoformat()`, not `str()` | `str(datetime)` drops the UTC offset, and a commit's time without its offset is a different fact from the one git reported. |
+| A time the file never had is `null` | Same rule as the block printing `-`: a file created and never edited has no last-modified time, and filling its birth in would be inventing a fact. |
 
 ## Traps already found
 
@@ -85,6 +99,12 @@ the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
     split in two. Rebase, scripted imports and converted histories all produce
     same-second commits. It now walks the parent links. Every earlier fixture
     used distinct timestamps, which is why three rounds of tests missed it.
+11. **A script that checks the README can read the wrong code block.** Searching
+    forward from the `$ command` line starts *inside* the fenced block, so the
+    regex finds the next block's opening fence and compares against the wrong
+    thing. Search backwards from the command line for the fence instead. This
+    produced two false alarms in one session — once on the new JSON blocks, once
+    on the Chinese README's `commit` block, which was correct all along.
 
 ## Environment notes
 
@@ -98,6 +118,11 @@ the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
 - **The system git config sets `core.autocrlf=true`.** The repository is LF
   everywhere and git warns about it on every diff. Harmless, but a
   `.gitattributes` with `* text=auto eol=lf` would settle it.
+- **The two READMEs are CRLF in the working tree, uniformly.** Every other file
+  is LF, and every blob in the index is LF, so the committed content is correct
+  and `git diff` shows only content changes. It is a working-tree state, not
+  something an edit introduced — the file is 100% CRLF rather than mixed. Do not
+  "fix" it: normalising it would rewrite every line of both files.
 
 ## Next
 
@@ -105,16 +130,24 @@ the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
    makes possible: which files tend to change together. It has not been designed
    yet, and the percentage has to be pinned down first — of a file's commits, of
    the pair's, or of everything — because the three give different numbers.
-2. **`files` and `hotspots` show the same ranking in two shapes.** The user asked
-   for both, so both exist. If one of them should become something else — an
-   inventory including deleted files, say — that is their call.
-3. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
+2. **The English README's `timeline` block has a stale rule line.** Its data rows
+   are a faithful width-110 run, but the rule above them is 91 characters where
+   a run at that width draws 108. Every other line of every other block in both
+   READMEs reproduces from a real run, so this is one line, not a habit. Left
+   alone pending the user's word, because it is a file change.
+3. **`files` and `hotspots` show the same ranking in two shapes**, and now emit
+   byte-identical JSON as well. The user asked for both, so both exist. If one of
+   them should become something else — an inventory including deleted files, say
+   — that is their call.
+4. **The `--json` work is not committed.** It is in the working tree, green, and
+   waiting on the user's word.
+5. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 161 tests
+$ uv run pytest                 # 176 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

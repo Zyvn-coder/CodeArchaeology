@@ -25,8 +25,10 @@ at a time; ``files`` prints the same rows as a table. They read the same numbers
 and differ only in shape.
 """
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 from rich import box
 from rich.table import Table
@@ -118,3 +120,38 @@ def build_table(rows: Iterable[Hotspot], width: int) -> Table:
             str(row.deletions),
         )
     return table
+
+
+def build_object(row: Hotspot) -> dict:
+    """One row as the fields other programs read.
+
+    ``path_history`` rides along because the row is counted by identity: a path
+    on its own does not say which names the count covers, so a reader could not
+    tell whether two rows are one file or two.
+    """
+    return {
+        "path": row.current_path,
+        "commits": row.commits,
+        "additions": row.additions,
+        "deletions": row.deletions,
+        "path_history": list(row.path_history),
+    }
+
+
+def build_json(rows: Iterable[Hotspot], repository_root, head_sha: str) -> str:
+    """The ranking as JSON, the same bytes for both commands that show it.
+
+    ``files`` and ``hotspots`` differ only in how the terminal draws the ranking,
+    and JSON is not a terminal drawing, so neither command gets its own shape.
+    The array is named for what it holds rather than for the command that asked,
+    the way the timeline names its own ``commits``.
+    """
+    return json.dumps(
+        {
+            "repository": str(Path(repository_root).resolve()),
+            "head_sha": head_sha,
+            "files": [build_object(row) for row in rows],
+        },
+        indent=2,
+        ensure_ascii=False,
+    )

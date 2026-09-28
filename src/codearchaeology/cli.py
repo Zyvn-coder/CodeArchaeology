@@ -19,9 +19,11 @@ from codearchaeology.analysis import (
 from codearchaeology.analysis import analyze as run_analysis
 from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
-from codearchaeology.file import build_block, find_files, normalise
+from codearchaeology.file import build_block, build_json as build_file_json
+from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import GitError, find_repository_root
+from codearchaeology.hotspots import build_json as build_ranking_json
 from codearchaeology.hotspots import build_table as build_files_table
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
@@ -61,16 +63,21 @@ def _repository_and_database(path: Path, database: Path | None) -> tuple[Path, P
     return repository_root, database or database_path(repository_root)
 
 
-def _warn_if_behind(repository_root: Path, database: Path) -> None:
+def _warn_if_behind(repository_root: Path, database: Path) -> str:
     """Say on stderr when the stored analysis stops short of the repository.
 
     Every command that reads the history makes a claim about completeness, so
     every one of them has to admit when the snapshot it read is behind. stderr
     keeps the output itself unchanged for anything reading it.
+
+    Returns the commit the snapshot stops at, so a caller that also needs it for
+    its own output does not open the database a second time for the same value.
     """
-    note = stale_analysis_note(repository_root, stored_head_sha(repository_root, database))
+    head_sha = stored_head_sha(repository_root, database)
+    note = stale_analysis_note(repository_root, head_sha)
     if note:
         typer.echo(note, err=True)
+    return head_sha
 
 
 @app.callback()
@@ -177,6 +184,9 @@ def hotspots(
         20, "--limit", "-n", min=1, help="How many files to show."
     ),
     show_all: bool = typer.Option(False, "--all", help="Show every file."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the ranking."
+    ),
 ) -> None:
     """Show the files that change most often."""
     try:
@@ -186,10 +196,16 @@ def hotspots(
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_behind(repository_root, database)
+    head_sha = _warn_if_behind(repository_root, database)
 
     rows = rank_hotspots(lives)
     selected = rows if show_all else rows[:limit]
+
+    if as_json:
+        # Nothing else may go to stdout, including the note below: the output has
+        # to stay parseable.
+        typer.echo(build_ranking_json(selected, repository_root, head_sha))
+        return
 
     typer.echo("Most Active Files")
     typer.echo()
@@ -221,6 +237,9 @@ def files(
         20, "--limit", "-n", min=1, help="How many files to show."
     ),
     show_all: bool = typer.Option(False, "--all", help="Show every file."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the table."
+    ),
 ) -> None:
     """List the files, most changed first."""
     try:
@@ -230,10 +249,14 @@ def files(
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_behind(repository_root, database)
+    head_sha = _warn_if_behind(repository_root, database)
 
     rows = rank_hotspots(lives)
     selected = rows if show_all else rows[:limit]
+
+    if as_json:
+        typer.echo(build_ranking_json(selected, repository_root, head_sha))
+        return
 
     console = Console()
     console.print(build_files_table(selected, console.width))
@@ -248,6 +271,9 @@ def file(
     file_path: str = typer.Argument(..., help="File to show, as git writes it."),
     path: Path = REPOSITORY_ARGUMENT,
     database: Path | None = DATABASE_OPTION,
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
 ) -> None:
     """Show one file's life: its names, its dates and its numbers."""
     try:
@@ -268,6 +294,10 @@ def file(
             err=True,
         )
         raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(build_file_json(found, wanted))
+        return
 
     # A name can belong to more than one file. All of them are shown, oldest
     # first, because picking one would hide the others.
