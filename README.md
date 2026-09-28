@@ -254,6 +254,7 @@ src/codearchaeology/
     lifecycle.py    rebuilding each file's life from the stored history
     statistics.py   the numbers that summarise one file's life
     hotspots.py     ranking files by how often they change
+    relationships.py  commits and files, read from either end
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests

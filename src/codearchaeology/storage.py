@@ -217,6 +217,30 @@ def find_commits(connection: sqlite3.Connection, prefix: str) -> list[Commit]:
     return _assemble(connection, "WHERE sha LIKE ?", (f"{prefix}%",))
 
 
+def find_commits_touching(connection: sqlite3.Connection, path: str) -> list[Commit]:
+    """Return the stored commits that touched *path*, newest first.
+
+    A rename counts under both of the names it involves. The commit that moved
+    ``old`` to ``new`` touched ``old`` by taking it away and ``new`` by putting
+    it there, and the row keeps the two paths in different columns, so both are
+    matched.
+
+    This answers for a name as written. A file that was renamed keeps one
+    history under several names, and that question belongs to the lifecycle.
+
+    Both columns are matched, so this scans ``commit_files`` rather than seeking
+    through the index on ``path``. At fifty-seven thousand rows that costs about
+    a twentieth of a second, which is the price of not indexing ``old_path`` for
+    a query that is asked once per file rather than once per row.
+    """
+    return _assemble(
+        connection,
+        "WHERE sha IN (SELECT commit_sha FROM commit_files"
+        " WHERE path = ? OR old_path = ?)",
+        (path, path),
+    )
+
+
 def _assemble(connection: sqlite3.Connection, where: str, parameters=()) -> list[Commit]:
     """Select commits and attach each one's parents and files.
 

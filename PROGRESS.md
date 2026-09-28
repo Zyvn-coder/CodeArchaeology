@@ -26,10 +26,11 @@ see it**. Four units in a row were spent on models that no command reads yet:
 | 2 | the rename similarity git reports, stored; schema version 1 to 2 | no |
 | 3 | `statistics.py` — the numbers that summarise a file's life | one stderr warning |
 | 4 | `hotspots.py`, and the `hotspots` command that prints the ranking | yes |
+| 5 | `relationships.py` — commits and files, read from either end | no |
 
-`lifecycle.py` and `statistics.py` are still not reachable from the command line:
-`archaeology file <path>` does not exist, so the path history and the per-file
-numbers can only be seen through the tests.
+`lifecycle.py`, `statistics.py` and `relationships.py` are still not reachable
+from the command line: `archaeology file <path>` does not exist, so the path
+history and the per-file numbers can only be seen through the tests.
 
 ## Decisions and why
 
@@ -47,6 +48,7 @@ numbers can only be seen through the tests.
 | Hotspots rank by commit count, not by churn | Commit counts are the steadier signal; churn is dominated by generated files and moves with the rename threshold. Both numbers are on the row, so a caller can sort by the other. |
 | Deleted files stay out of the ranking by default | A hotspot is a place, and a file that is gone is not one. The history keeps them behind `include_deleted`. |
 | Frequency must never be reported as importance | The same count comes from core code, from code that keeps breaking, from moving requirements, from a refactor in progress. The tool cannot tell those apart and must not imply it can. |
+| "Which commits touched this name" and "which commits touched this file" stay two questions | They disagree wherever a name was reused, and the fixture shows both directions of the difference. Collapsing them into one would make the tool quietly wrong about either renames or reused names. |
 
 ## Traps already found
 
@@ -100,14 +102,17 @@ numbers can only be seen through the tests.
 
 1. **`archaeology file <path>`**: the lifecycle's path history and its statistics.
    That is the last part of the v0.2 model with no command in front of it.
-2. Otherwise v0.2 is complete at both layers.
+2. **Co-change**, which the user described as the next thing the commit-file link
+   makes possible: which files tend to change together. It has not been designed
+   yet, and the percentage has to be pinned down first — of a file's commits, of
+   the pair's, or of everything — because the three give different numbers.
 3. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 136 tests
+$ uv run pytest                 # 144 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

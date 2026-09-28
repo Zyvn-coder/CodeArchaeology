@@ -241,6 +241,7 @@ src/codearchaeology/
     lifecycle.py    从存下来的历史里重建每个文件的一辈子
     statistics.py   汇总一个文件一辈子的那些数字
     hotspots.py     按改动频繁程度给文件排名
+    relationships.py 提交与文件的关系，从任一端都能读
     formatting.py   两个视图共用的小工具
 tests/
     sample_repo.py  构造一个确定性的小仓库供测试使用
