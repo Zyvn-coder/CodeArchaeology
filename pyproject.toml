@@ -27,6 +27,10 @@ dependencies = [
 [project.scripts]
 archaeology = "codearchaeology.cli:app"
 
+[project.urls]
+Repository = "https://github.com/Zyvn-coder/CodeArchaeology"
+Issues = "https://github.com/Zyvn-coder/CodeArchaeology/issues"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

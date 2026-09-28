@@ -29,9 +29,11 @@ SQLite，并重建代码从第一次提交走到今天的过程。
 
 ## 安装
 
-CodeArchaeology 还没发布到 PyPI。从本仓库的检出开始：
+CodeArchaeology 还没发布到 PyPI。从检出开始：
 
 ```console
+$ git clone https://github.com/Zyvn-coder/CodeArchaeology
+$ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
 archaeology 0.1.0

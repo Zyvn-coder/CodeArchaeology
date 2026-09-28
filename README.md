@@ -30,9 +30,11 @@ the code travelled from its first commit to its current state.
 
 ## Install
 
-CodeArchaeology is not on PyPI yet. To run it from a checkout of this repository:
+CodeArchaeology is not on PyPI yet. To run it from a checkout:
 
 ```console
+$ git clone https://github.com/Zyvn-coder/CodeArchaeology
+$ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
 archaeology 0.1.0
