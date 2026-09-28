@@ -71,7 +71,7 @@ def test_a_file_that_is_only_edited(lives) -> None:
 
     assert plain.created.change_type == "A"
     assert plain.path_history == ("plain.py",)
-    assert plain.modifications == 1
+    assert [event.change_type for event in plain.events] == ["A", "M"]
     assert plain.renames == 0
     assert plain.is_alive
 

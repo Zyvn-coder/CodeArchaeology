@@ -196,6 +196,26 @@ def test_command_explains_a_missing_repository(tmp_path: Path, database: Path) -
     assert "not a git repository" in result.stderr
 
 
+def test_command_stays_quiet_about_a_full_repository(
+    sample_repo: Path, database: Path
+) -> None:
+    result = runner.invoke(app, ["analyze", str(sample_repo), "--db", str(database)])
+
+    assert result.exit_code == 0
+    assert "shallow" not in result.stderr
+
+
+def test_command_warns_about_a_shallow_clone(
+    shallow_clone: Path, database: Path
+) -> None:
+    result = runner.invoke(
+        app, ["analyze", str(shallow_clone), "--db", str(database)]
+    )
+
+    assert result.exit_code == 0
+    assert "shallow clone" in result.stderr
+
+
 def test_command_rejects_a_path_that_does_not_exist(
     tmp_path: Path, database: Path
 ) -> None:

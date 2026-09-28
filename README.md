@@ -63,6 +63,10 @@ Running it again replaces what was stored, so it is safe to repeat after new
 commits, a rebase or an amend. A database written by an older version of the
 tool is rebuilt from scratch the same way.
 
+If the repository is a shallow clone, `analyze` says so on stderr. The oldest
+commit such a clone has is treated as the root, so every file in it looks like it
+was born there and a merge commit reports changes it never made.
+
 ### Show the timeline
 
 `timeline` prints one line per commit, newest first. The message column uses
@@ -205,6 +209,7 @@ src/codearchaeology/
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
     lifecycle.py    rebuilding each file's life from the stored history
+    statistics.py   the numbers that summarise one file's life
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -255,7 +260,13 @@ stage is stable.
   while most of its content changes makes git report a deletion plus a separate
   addition, which splits that file's life in two. The score git did report is
   stored alongside the rename, so how close a rename came to that threshold
-  stays visible after the fact.
+  stays visible after the fact. One consequence reaches the numbers: the
+  additions and deletions a file is credited with depend on that decision, while
+  the net change does not.
+- A shallow clone is not a shorter history, it is a differently shaped one. Git
+  treats the oldest commit it has as the root, so every file in it looks like it
+  was born there and a merge commit reports changes it never made. `analyze`
+  warns about this on stderr.
 - `commit` accepts shas and sha prefixes only, not refs such as `HEAD` or a
   branch name.
 - The database is keyed on the repository's absolute path, so moving or renaming

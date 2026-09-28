@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +33,32 @@ def pytest_configure(config) -> None:
 def sample_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The fixture repository: six commits, a rename, a deletion and a merge."""
     return build_sample_repo(tmp_path_factory.mktemp("sample-repo"))
+
+
+@pytest.fixture(scope="session")
+def shallow_clone(
+    sample_repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """A clone of the fixture repository that is missing its oldest commits.
+
+    Cloned through a ``file://`` URL on purpose: git ignores ``--depth`` for a
+    plain local path and quietly makes a full clone instead.
+    """
+    destination = tmp_path_factory.mktemp("shallow") / "clone"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--quiet",
+            "--depth",
+            "2",
+            sample_repo.as_uri(),
+            str(destination),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return destination
 
 
 @pytest.fixture

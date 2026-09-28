@@ -9,7 +9,11 @@ import typer
 from rich.console import Console
 
 from codearchaeology import __version__
-from codearchaeology.analysis import AnalysisError, stale_analysis_note
+from codearchaeology.analysis import (
+    AnalysisError,
+    shallow_clone_note,
+    stale_analysis_note,
+)
 from codearchaeology.analysis import analyze as run_analysis
 from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
@@ -76,6 +80,11 @@ def analyze(
     except GitError as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
+
+    # On stderr, so the summary below stays exactly what the README documents.
+    note = shallow_clone_note(result.repository_root)
+    if note:
+        typer.echo(note, err=True)
 
     typer.echo(f"Repository  {result.repository_root}")
     typer.echo(f"Commits     {result.commits} ({result.file_changes} file changes)")

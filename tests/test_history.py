@@ -9,6 +9,7 @@ from codearchaeology.history import (
     Commit,
     FileChange,
     GitError,
+    is_shallow_clone,
     parse_commits,
     read_commits,
 )
@@ -140,6 +141,35 @@ def test_non_ascii_path_survives(commits: list[Commit]) -> None:
 def test_directory_that_is_not_a_repository_raises(tmp_path: Path) -> None:
     with pytest.raises(GitError, match="not a git repository"):
         read_commits(tmp_path)
+
+
+def test_a_full_repository_is_not_shallow(sample_repo: Path) -> None:
+    assert not is_shallow_clone(sample_repo)
+
+
+def test_a_shallow_clone_is_detected(shallow_clone: Path) -> None:
+    assert is_shallow_clone(shallow_clone)
+
+
+def test_a_shallow_clone_invents_history_it_does_not_have(
+    shallow_clone: Path, sample_repo: Path
+) -> None:
+    """Why the warning exists, in one assertion.
+
+    The oldest commit a shallow clone holds is treated as the root, so the merge
+    commit there has no parents at all and reports four files as brand new. In
+    the full repository the very same commit is a merge with two parents and no
+    file changes, because git prints no diff for a merge. The history is not just
+    shorter, its shape is different.
+    """
+    shallow = read_commits(shallow_clone)[-1]
+    full = _find(read_commits(sample_repo), "Merge branch 'feature/caching'")
+
+    assert shallow.sha == full.sha
+    assert full.is_merge
+    assert full.changes == ()
+    assert shallow.parents == ()
+    assert len(shallow.changes) == 4
 
 
 def test_parser_rejects_unknown_output() -> None:

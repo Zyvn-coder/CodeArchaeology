@@ -52,6 +52,11 @@ class LifecycleEvent:
     deleted_lines: int | None
     similarity: int | None
 
+    @property
+    def is_binary(self) -> bool:
+        """Binary files have no line counts, so git reports ``-`` for both."""
+        return self.added_lines is None and self.deleted_lines is None
+
 
 @dataclass(frozen=True, slots=True)
 class Lifecycle:
@@ -97,11 +102,6 @@ class Lifecycle:
     @property
     def is_alive(self) -> bool:
         return self.deleted is None
-
-    @property
-    def modifications(self) -> int:
-        """How many events changed the file's content in place."""
-        return sum(1 for event in self.events if event.change_type == MODIFIED)
 
     @property
     def renames(self) -> int:

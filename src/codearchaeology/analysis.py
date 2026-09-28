@@ -11,6 +11,7 @@ from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import (
     GitError,
     find_repository_root,
+    is_shallow_clone,
     read_commits,
     read_head_sha,
 )
@@ -94,6 +95,30 @@ def stale_analysis_note(repository_root, stored_head_sha: str | None) -> str | N
         f"Note: this analysis stops at {stored_head_sha[:SHORT_SHA_LENGTH]},"
         f" but HEAD is now {current_head[:SHORT_SHA_LENGTH]};"
         f" run 'archaeology analyze {repository_root}' to refresh it"
+    )
+
+
+def shallow_clone_note(repository_root) -> str | None:
+    """Return a note when *repository_root* is missing part of its history.
+
+    Worth saying out loud because the result is not merely shorter: git treats
+    the oldest commit a shallow clone has as the root, so every file in it looks
+    like it was born there and a merge commit reports changes it never made.
+    Nothing downstream can tell that from a real birth, so the warning has to
+    come from here.
+    """
+    try:
+        shallow = is_shallow_clone(repository_root)
+    except GitError:
+        return None
+
+    if not shallow:
+        return None
+
+    return (
+        "Note: this is a shallow clone, so its oldest commit is treated as the"
+        " root: files look like they were born there and merge commits report"
+        " changes they never made. Analyze a full clone for trustworthy dates"
     )
 
 

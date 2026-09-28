@@ -111,6 +111,19 @@ def read_head_sha(repo) -> str:
     return _run_git(repo, "--no-pager", "rev-parse", "HEAD").decode("ascii").strip()
 
 
+def is_shallow_clone(repo) -> bool:
+    """Return whether *repo* is missing part of its history.
+
+    A shallow clone does not have its oldest commits, and git then treats the
+    oldest one it does have as a root commit: every file in it is reported as an
+    addition, and a merge commit there reports changes it never made. The
+    history is not merely shorter, its shape is different, so anything built on
+    it inherits the mistake.
+    """
+    output = _run_git(repo, "--no-pager", "rev-parse", "--is-shallow-repository")
+    return output.decode("ascii").strip() == "true"
+
+
 def find_repository_root(path) -> Path | None:
     """Return the working tree root that contains *path*, or ``None``.
 
