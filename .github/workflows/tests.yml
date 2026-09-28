@@ -22,9 +22,11 @@ jobs:
           - "3.11"
           - "3.13"
     steps:
-      - uses: actions/checkout@v7
+      # Pinned to exact releases rather than moving major tags: setup-uv
+      # publishes no v8, v9 or v10 tag, only full version numbers.
+      - uses: actions/checkout@v7.0.1
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
 
       # The declared floor is 3.11 while development happens on 3.13, so the
       # suite is asked to confirm which interpreter it actually got.
