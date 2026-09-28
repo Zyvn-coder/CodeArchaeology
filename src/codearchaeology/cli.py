@@ -1,0 +1,174 @@
+"""Command line entry point for CodeArchaeology.
+
+v0.1 is under construction: ``analyze``, ``timeline`` and ``commit`` work.
+"""
+
+from pathlib import Path
+
+import typer
+from rich.console import Console
+
+from codearchaeology import __version__
+from codearchaeology.analysis import AnalysisError
+from codearchaeology.analysis import analyze as run_analysis
+from codearchaeology.cache import database_path
+from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
+from codearchaeology.formatting import SHORT_SHA_LENGTH
+from codearchaeology.history import GitError, find_repository_root
+from codearchaeology.timeline import build_table, load_timeline
+
+app = typer.Typer(
+    name="archaeology",
+    help="A time machine for understanding how code evolves.",
+    no_args_is_help=True,
+)
+
+REPOSITORY_ARGUMENT = typer.Argument(
+    Path("."),
+    help="Directory inside the repository to work on.",
+    exists=True,
+    file_okay=False,
+    resolve_path=True,
+)
+
+DATABASE_OPTION = typer.Option(
+    None,
+    "--db",
+    help="Database file to use. Defaults to the user cache directory.",
+)
+
+
+def _print_version_and_exit(value: bool) -> None:
+    if value:
+        typer.echo(f"archaeology {__version__}")
+        raise typer.Exit()
+
+
+def _repository_and_database(path: Path, database: Path | None) -> tuple[Path, Path]:
+    repository_root = find_repository_root(path)
+    if repository_root is None:
+        raise GitError(f"not a git repository: {path}")
+    return repository_root, database or database_path(repository_root)
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the version and exit.",
+        callback=_print_version_and_exit,
+        is_eager=True,
+    ),
+) -> None:
+    """CodeArchaeology — reconstruct how a Git repository evolved."""
+
+
+@app.command()
+def analyze(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+) -> None:
+    """Read a repository's history and store it in SQLite."""
+    try:
+        result = run_analysis(path, database)
+    except GitError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Repository  {result.repository_root}")
+    typer.echo(f"Commits     {result.commits} ({result.file_changes} file changes)")
+    typer.echo(
+        f"Range       {result.earliest_commit:%Y-%m-%d}"
+        f" to {result.latest_commit:%Y-%m-%d}"
+    )
+    typer.echo(f"HEAD        {result.head_sha[:SHORT_SHA_LENGTH]}")
+    typer.echo(f"Database    {result.database}")
+
+
+@app.command()
+def timeline(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    limit: int = typer.Option(
+        20, "--limit", "-n", min=1, help="How many commits to show."
+    ),
+    show_all: bool = typer.Option(False, "--all", help="Show every commit."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of a table."
+    ),
+) -> None:
+    """Show how the repository evolved, newest commit first."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        stored = load_timeline(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    selected = None if show_all else limit
+
+    if as_json:
+        # Nothing else may go to stdout: the output has to stay parseable.
+        typer.echo(stored.as_json(selected))
+        return
+
+    commits = stored.commits
+    typer.echo(f"Repository  {stored.repository_root}")
+    typer.echo(
+        f"Commits     {len(commits)}"
+        f" ({sum(len(commit.changes) for commit in commits)} file changes)"
+    )
+    typer.echo(
+        f"Range       {min(commit.committed_at for commit in commits):%Y-%m-%d}"
+        f" to {max(commit.committed_at for commit in commits):%Y-%m-%d}"
+    )
+    typer.echo(f"HEAD        {stored.head_sha[:SHORT_SHA_LENGTH]}")
+    typer.echo()
+
+    rows = stored.rows(selected)
+    console = Console()
+    console.print(build_table(rows, console.width))
+
+    hidden = len(commits) - len(rows)
+    if hidden:
+        typer.echo(f"\n{hidden} more commits. Use --all to see them.")
+
+
+@app.command()
+def commit(
+    sha: str = typer.Argument(..., help="Commit to show. A prefix is enough."),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+) -> None:
+    """Show one commit in full, its message and files included."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        found = load_commit(repository_root, database, sha)
+    except (GitError, AnalysisError, CommitNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    parents = " ".join(
+        parent[:SHORT_SHA_LENGTH] for parent in found.parents
+    ) or "(none)"
+
+    typer.echo(f"Commit      {found.sha}")
+    typer.echo(f"Author      {found.author_name} <{found.author_email}>")
+    typer.echo(f"Authored    {found.authored_at:%Y-%m-%d %H:%M:%S %z}")
+    typer.echo(f"Committed   {found.committed_at:%Y-%m-%d %H:%M:%S %z}")
+    typer.echo(f"Parents     {parents}")
+    typer.echo()
+    typer.echo(found.message)
+    typer.echo()
+
+    if not found.changes:
+        note = "No file changes recorded"
+        if found.is_merge:
+            note += " (git prints no diff for a merge commit)"
+        typer.echo(f"{note}.")
+        return
+
+    console = Console()
+    console.print(build_file_table(found.changes, console.width))

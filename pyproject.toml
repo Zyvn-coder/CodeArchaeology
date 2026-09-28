@@ -1,0 +1,43 @@
+[project]
+name = "codearchaeology"
+version = "0.1.0"
+description = "A time machine for understanding how code evolves."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "git",
+    "code-evolution",
+    "code-archaeology",
+    "software-archaeology",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+[project.scripts]
+archaeology = "codearchaeology.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codearchaeology"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
