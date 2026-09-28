@@ -1,6 +1,7 @@
 """Tests for rebuilding each file's life from the stored history."""
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,11 @@ import pytest
 from codearchaeology.analysis import analyze
 from codearchaeology.history import Commit, FileChange, read_commits
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles, load_lifecycles
-from sample_repo import build_lifecycle_repo, build_rename_boundary_repo
+from sample_repo import (
+    build_lifecycle_repo,
+    build_rename_boundary_repo,
+    build_same_second_repo,
+)
 
 FIXTURE_COMMITS = 8
 FIXTURE_LIVES = 7
@@ -193,6 +198,42 @@ def test_a_rename_that_survived_carries_the_score_git_gave_it(
 
 def test_the_order_of_the_input_does_not_matter(repository: Path, lives) -> None:
     assert build_lifecycles(reversed(read_commits(repository))) == lives
+
+
+def test_commits_sharing_a_timestamp_keep_their_chain(tmp_path: Path) -> None:
+    """A rebase, a scripted import or a converted history puts commits in one
+    second, and the walk used to fall back on the order it was handed — which
+    from the store is newest first, so the rename came before the creation.
+
+    Ordering by the parent links fixes it; the clock only breaks ties between
+    commits that are not related to each other.
+    """
+    repository = build_same_second_repo(tmp_path / "same-second")
+    commits = read_commits(repository)
+
+    assert len({commit.committed_at for commit in commits}) == 1
+
+    built = build_lifecycles(commits)
+
+    assert len(built) == 1
+    assert built[0].path_history == ("app.py", "src/app.py")
+    assert [event.change_type for event in built[0].events] == ["A", "R", "M"]
+    assert built == build_lifecycles(reversed(commits))
+
+
+def test_a_cycle_does_not_lose_commits() -> None:
+    """Git cannot produce a cycle, but this function takes whatever it is given,
+    and dropping a commit silently would be worse than placing it imperfectly."""
+    first = _synthetic(1, FileChange("a.py", "A", 1, 0))
+    second = _synthetic(2, FileChange("b.py", "A", 1, 0))
+    looping = [
+        replace(first, parents=(second.sha,)),
+        replace(second, parents=(first.sha,)),
+    ]
+
+    built = build_lifecycles(looping)
+
+    assert sum(len(life.events) for life in built) == 2
 
 
 def test_lives_are_rebuilt_from_the_stored_history(

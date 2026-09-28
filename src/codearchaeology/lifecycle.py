@@ -28,6 +28,7 @@ rules above rather than needing a special case.
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+import heapq
 
 from codearchaeology.analysis import open_analysis
 from codearchaeology.history import Commit
@@ -111,8 +112,8 @@ class Lifecycle:
 def build_lifecycles(commits: Iterable[Commit]) -> tuple[Lifecycle, ...]:
     """Rebuild every file's life, oldest life first.
 
-    The input may be in any order; it is walked oldest commit first, which is
-    the order the events actually happened in.
+    The input may be in any order; the walk follows the parent links, so the
+    events are replayed in the order they actually happened.
     """
     lives: list[list[LifecycleEvent]] = []
     living: dict[str, list[LifecycleEvent]] = {}
@@ -123,7 +124,7 @@ def build_lifecycles(commits: Iterable[Commit]) -> tuple[Lifecycle, ...]:
         lives.append(events)
         return events
 
-    for commit in sorted(commits, key=lambda commit: commit.committed_at):
+    for commit in _oldest_first(commits):
         for change in commit.changes:
             if change.change_type == CREATED:
                 events = start()
@@ -169,3 +170,57 @@ def load_lifecycles(repository_root, database) -> tuple[Lifecycle, ...]:
     with open_analysis(repository_root, database) as connection:
         commits = read_stored_commits(connection)
     return build_lifecycles(commits)
+
+
+def _oldest_first(commits: Iterable[Commit]) -> list[Commit]:
+    """Return the commits with every parent ahead of its children.
+
+    Ordering by timestamp alone is not enough. Commits can share one — a rebase,
+    a scripted import or a converted history will all produce that — and a plain
+    sort is stable, so ties keep whatever order the caller passed in. The stored
+    history arrives newest first, which would walk a rename before the creation
+    it belongs to and break the chain in two.
+
+    Parents are not always present. A shallow clone has none for its oldest
+    commit and a filtered history can drop them, so a commit whose parents are
+    unknown is ready from the start; that is what keeps those cases working.
+    """
+    by_sha = {commit.sha: commit for commit in commits}
+    waiting = {
+        sha: {parent for parent in commit.parents if parent in by_sha}
+        for sha, commit in by_sha.items()
+    }
+
+    children: dict[str, list[str]] = {}
+    for sha, commit in by_sha.items():
+        for parent in commit.parents:
+            children.setdefault(parent, []).append(sha)
+
+    # The heap breaks ties between commits that are not related to each other,
+    # so the result does not depend on the order the caller handed them over in.
+    ready = [
+        (commit.committed_at, sha) for sha, commit in by_sha.items() if not waiting[sha]
+    ]
+    heapq.heapify(ready)
+
+    ordered: list[Commit] = []
+    while ready:
+        _, sha = heapq.heappop(ready)
+        ordered.append(by_sha[sha])
+        for child in children.get(sha, ()):
+            waiting[child].discard(sha)
+            if not waiting[child]:
+                heapq.heappush(ready, (by_sha[child].committed_at, child))
+
+    if len(ordered) == len(by_sha):
+        return ordered
+
+    # Git cannot produce a cycle, but this function takes whatever commits it is
+    # handed. Anything left over still has to come back: dropping a commit
+    # silently would be worse than placing it imperfectly.
+    emitted = {commit.sha for commit in ordered}
+    leftover = sorted(
+        (commit for sha, commit in by_sha.items() if sha not in emitted),
+        key=lambda commit: (commit.committed_at, commit.sha),
+    )
+    return ordered + leftover

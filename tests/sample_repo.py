@@ -38,6 +38,10 @@ MERGE_DATE = "2024-03-08T09:00:00+00:00"
 FINAL_DATE = "2024-03-10T09:00:00+00:00"
 LATER_DATE = "2024-03-12T09:00:00+00:00"
 
+# One timestamp shared by every commit of the same-second fixture. A rebase, a
+# scripted import and a converted history all produce timestamps like this.
+SAME_SECOND = "2024-06-01T12:00:00+00:00"
+
 README = """\
 # sample project
 
@@ -344,6 +348,35 @@ def build_lifecycle_repo(destination):
     (repo / "heavy.py").rename(repo / "renamed.py")
     _write_file(repo, "renamed.py", HEAVY_REWRITTEN)
     _commit(repo, _day(8), "Rename heavy.py while rewriting most of it")
+
+    return repo
+
+
+def build_same_second_repo(destination):
+    """Create a repository whose commits all carry the same timestamp.
+
+    Three commits inside one second: a file is created, renamed and then edited.
+    A rebase, a scripted import or a converted history all produce timestamps
+    like this. Walking the history by time alone would leave the order up to
+    whoever passed it in, and the stored history arrives newest first, so the
+    rename would be replayed before the creation it belongs to.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "app.py", APP)
+    _commit(repo, SAME_SECOND, "Create app.py")
+
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "app.py").rename(repo / "src" / "app.py")
+    _commit(repo, SAME_SECOND, "Move app.py into the src package")
+
+    _write_file(repo, "src/app.py", APP_RECREATED)
+    _commit(repo, SAME_SECOND, "Edit app.py")
 
     return repo
 
