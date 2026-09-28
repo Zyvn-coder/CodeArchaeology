@@ -10,7 +10,12 @@ from codearchaeology.cache import CACHE_DIRECTORY_VARIABLE, cache_directory, dat
 from codearchaeology.cli import app
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import Commit, GitError, read_commits, read_head_sha
-from codearchaeology.storage import connect, get_meta, read_stored_commits
+from codearchaeology.storage import (
+    SCHEMA_VERSION,
+    connect,
+    get_meta,
+    read_stored_commits,
+)
 from sample_repo import add_commit, build_single_commit_repo
 
 runner = CliRunner()
@@ -94,6 +99,28 @@ def test_rescanning_replaces_the_previous_history(
 def test_rejects_a_directory_outside_any_repository(tmp_path: Path) -> None:
     with pytest.raises(GitError, match="not a git repository"):
         analyze(tmp_path, tmp_path / "history.db")
+
+
+def test_an_older_database_is_rebuilt_rather_than_failing(
+    sample_repo: Path, older_database: Path
+) -> None:
+    """The writer has to rebuild too, not only the reader.
+
+    create_schema uses CREATE TABLE IF NOT EXISTS, so it cannot add a column to
+    a table that already exists. Without an explicit rebuild the insert would
+    fail with a raw sqlite error naming a column that is not there, which tells
+    the user nothing they can act on.
+    """
+    result = analyze(sample_repo, older_database)
+
+    connection = connect(older_database)
+    try:
+        assert get_meta(connection, "schema_version") == SCHEMA_VERSION
+        assert len(read_stored_commits(connection)) == FIXTURE_COMMITS
+    finally:
+        connection.close()
+
+    assert result.commits == FIXTURE_COMMITS
 
 
 def test_database_path_is_stable_and_repository_specific(tmp_path: Path) -> None:

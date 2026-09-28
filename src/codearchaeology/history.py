@@ -63,6 +63,11 @@ class FileChange:
     added_lines: int | None
     deleted_lines: int | None
     old_path: str | None = None
+    # Git's similarity score, 0 to 100, for a rename or a copy. It is ``None``
+    # for every other change type, which git does not score. The score is what
+    # separates a certain rename from one git barely agreed to: the threshold it
+    # is compared against is 50.
+    similarity: int | None = None
 
     @property
     def is_binary(self) -> bool:
@@ -150,26 +155,26 @@ def _parse_commit(chunk: str) -> Commit:
         # git puts a newline between the formatted header and the first entry.
         diff_tokens[0] = diff_tokens[0].lstrip("\n")
 
-    change_types: dict[tuple[str | None, str], str] = {}
+    raw_entries: dict[tuple[str | None, str], tuple[str, int | None]] = {}
     line_counts: dict[tuple[str | None, str], tuple[int | None, int | None]] = {}
 
     index = 0
     while index < len(diff_tokens):
         token = diff_tokens[index]
         if token.startswith(":"):
-            change_type, key, index = _parse_raw_entry(diff_tokens, index)
-            change_types[key] = change_type
+            change_type, similarity, key, index = _parse_raw_entry(diff_tokens, index)
+            raw_entries[key] = (change_type, similarity)
         elif NUMSTAT_PATTERN.match(token):
             counts, key, index = _parse_numstat_entry(diff_tokens, index)
             line_counts[key] = counts
         else:
             raise ValueError(f"unexpected git output: {token!r}")
 
-    if change_types.keys() != line_counts.keys():
+    if raw_entries.keys() != line_counts.keys():
         raise ValueError("git reported different files in --raw and --numstat")
 
     changes = []
-    for key, change_type in change_types.items():
+    for key, (change_type, similarity) in raw_entries.items():
         old_path, path = key
         added, deleted = line_counts[key]
         changes.append(
@@ -179,6 +184,7 @@ def _parse_commit(chunk: str) -> Commit:
                 added_lines=added,
                 deleted_lines=deleted,
                 old_path=old_path,
+                similarity=similarity,
             )
         )
 
@@ -199,7 +205,14 @@ def _parse_raw_entry(tokens: list[str], index: int):
     if len(fields) != 5:
         raise ValueError(f"unexpected --raw entry: {tokens[index]!r}")
 
-    change_type = fields[4][0]
+    # The status is a letter and, for a rename or a copy, git's similarity
+    # score: "R056" means the file kept 56% of its content. The letter alone is
+    # enough to walk the history; the score is kept because it is the difference
+    # between a certain rename and one that only just cleared the threshold.
+    status = fields[4]
+    change_type = status[0]
+    score = status[1:]
+    similarity = int(score) if score else None
     index += 1
 
     old_path = None
@@ -208,7 +221,7 @@ def _parse_raw_entry(tokens: list[str], index: int):
         index += 1
 
     path = tokens[index]
-    return change_type, (old_path, path), index + 1
+    return change_type, similarity, (old_path, path), index + 1
 
 
 def _parse_numstat_entry(tokens: list[str], index: int):

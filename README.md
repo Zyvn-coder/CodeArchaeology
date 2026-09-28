@@ -60,7 +60,8 @@ Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 ```
 
 Running it again replaces what was stored, so it is safe to repeat after new
-commits, a rebase or an amend.
+commits, a rebase or an amend. A database written by an older version of the
+tool is rebuilt from scratch the same way.
 
 ### Show the timeline
 
@@ -252,7 +253,9 @@ stage is stable.
   diff. Only the changed files and their line counts.
 - Rename detection is git's, at its default 50% similarity. Renaming a file
   while most of its content changes makes git report a deletion plus a separate
-  addition, which splits that file's life in two.
+  addition, which splits that file's life in two. The score git did report is
+  stored alongside the rename, so how close a rename came to that threshold
+  stays visible after the fact.
 - `commit` accepts shas and sha prefixes only, not refs such as `HEAD` or a
   branch name.
 - The database is keyed on the repository's absolute path, so moving or renaming

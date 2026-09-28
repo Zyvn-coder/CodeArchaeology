@@ -18,8 +18,8 @@ from codearchaeology.storage import (
     SCHEMA_VERSION,
     clear_history,
     connect,
-    create_schema,
     get_meta,
+    prepare_database,
     set_meta,
     write_commits,
 )
@@ -129,7 +129,10 @@ def analyze(path, database=None) -> AnalysisResult:
 
     connection = connect(database)
     try:
-        create_schema(connection)
+        # Rebuilds the tables when the database was written by another schema
+        # version, so that a stale cache is refreshed instead of failing on a
+        # column that is not there yet.
+        prepare_database(connection)
         # A rescan replaces what is already there. Without this, commits that a
         # rebase or an amend removed from git would stay in the database
         # forever.

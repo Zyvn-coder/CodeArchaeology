@@ -212,6 +212,23 @@ def _day(number: int) -> str:
     return f"2024-05-{number:02d}T09:00:00+00:00"
 
 
+# Three files of a hundred lines, rewritten by a different amount while being
+# renamed. Forty rewritten lines still clears git's default 50% similarity;
+# fifty and eighty do not. See build_rename_boundary_repo.
+SWEEP_LINES = 100
+SWEEP_REWRITES = {"under": 40, "over": 50, "mostly": 80}
+
+
+def _sweep_file(name: str, rewritten: int = 0) -> str:
+    """A hundred-line file, with the first *rewritten* lines replaced."""
+    lines = [
+        f"{name} line {number} with a body of text\n" for number in range(SWEEP_LINES)
+    ]
+    for number in range(rewritten):
+        lines[number] = f"REWRITTEN {name} line {number} with other text\n"
+    return "".join(lines)
+
+
 def build_sample_repo(destination):
     """Create the fixture repository at *destination* and return its path."""
     repo = Path(destination)
@@ -327,6 +344,37 @@ def build_lifecycle_repo(destination):
     (repo / "heavy.py").rename(repo / "renamed.py")
     _write_file(repo, "renamed.py", HEAVY_REWRITTEN)
     _commit(repo, _day(8), "Rename heavy.py while rewriting most of it")
+
+    return repo
+
+
+def build_rename_boundary_repo(destination):
+    """Create the repository that walks up to git's rename threshold.
+
+    Two commits: three hundred-line files are created, then all three are renamed
+    in a single commit while a different number of lines is rewritten.
+
+    ``under`` keeps sixty lines, which clears the default 50% similarity, so git
+    reports a rename. ``over`` keeps fifty and ``mostly`` keeps twenty, which do
+    not, so git reports a deletion and an addition instead. Both sides of the
+    threshold sit in the same commit, which also checks that git pairs each
+    deletion with the right addition when several are in flight at once.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    for name in SWEEP_REWRITES:
+        _write_file(repo, f"{name}.py", _sweep_file(name))
+    _commit(repo, _day(1), "Create three files of a hundred lines")
+
+    for name, rewritten in SWEEP_REWRITES.items():
+        (repo / f"{name}.py").rename(repo / f"{name}_after.py")
+        _write_file(repo, f"{name}_after.py", _sweep_file(name, rewritten))
+    _commit(repo, _day(2), "Rename all three, rewriting a different amount each")
 
     return repo
 

@@ -11,6 +11,8 @@ from codearchaeology.storage import (
     connect,
     create_schema,
     get_meta,
+    prepare_database,
+    read_schema_version,
     read_stored_commits,
     write_commits,
 )
@@ -48,6 +50,58 @@ def _table_counts(connection: sqlite3.Connection) -> dict[str, int]:
 
 def test_schema_version_is_recorded(connection: sqlite3.Connection) -> None:
     assert get_meta(connection, "schema_version") == SCHEMA_VERSION
+
+
+def _columns(connection: sqlite3.Connection, table: str) -> list[str]:
+    return [row["name"] for row in connection.execute(f"PRAGMA table_info({table})")]
+
+
+def test_a_file_that_was_just_created_has_no_schema_version(tmp_path: Path) -> None:
+    """No tables at all is a different thing from an older version's tables."""
+    connection = connect(tmp_path / "fresh.db")
+    try:
+        assert read_schema_version(connection) is None
+    finally:
+        connection.close()
+
+
+def test_prepare_database_leaves_a_current_database_alone(
+    connection: sqlite3.Connection,
+) -> None:
+    before = _table_counts(connection)
+
+    prepare_database(connection)
+
+    assert _table_counts(connection) == before
+
+
+def test_prepare_database_rebuilds_a_database_from_another_version(
+    older_database: Path,
+) -> None:
+    connection = connect(older_database)
+    try:
+        assert "similarity" not in _columns(connection, "commit_files")
+
+        prepare_database(connection)
+
+        assert read_schema_version(connection) == SCHEMA_VERSION
+        assert "similarity" in _columns(connection, "commit_files")
+    finally:
+        connection.close()
+
+
+def test_round_trip_preserves_the_similarity_score(
+    connection: sqlite3.Connection,
+) -> None:
+    """The score is a fact git reported, so it survives storage like the rest."""
+    scores = [
+        change.similarity
+        for commit in read_stored_commits(connection)
+        for change in commit.changes
+        if change.change_type == "R"
+    ]
+
+    assert scores == [100]
 
 
 def test_missing_meta_key_returns_none(connection: sqlite3.Connection) -> None:

@@ -5,7 +5,7 @@ here can be rebuilt by reading git again. That is why the schema only holds
 facts git reported, and nothing that only a later version of the tool could
 compute.
 
-Schema version 1 is four tables:
+Schema version 2 is four tables:
 
 * ``meta``           key/value pairs, including the schema version
 * ``commits``        one row per commit
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from codearchaeology.history import Commit, FileChange
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -55,12 +55,15 @@ CREATE TABLE IF NOT EXISTS commit_files (
     change_type   TEXT    NOT NULL,
     added_lines   INTEGER,
     deleted_lines INTEGER,
+    similarity    INTEGER,
     PRIMARY KEY (commit_sha, path)
 );
 
 CREATE INDEX IF NOT EXISTS commit_parents_parent ON commit_parents (parent_sha);
 CREATE INDEX IF NOT EXISTS commit_files_path ON commit_files (path);
 """
+
+TABLES = ("commit_files", "commit_parents", "commits", "meta")
 
 
 def connect(database) -> sqlite3.Connection:
@@ -75,6 +78,41 @@ def create_schema(connection: sqlite3.Connection) -> None:
     """Create the tables if they are missing and stamp the schema version."""
     connection.executescript(SCHEMA)
     set_meta(connection, "schema_version", SCHEMA_VERSION)
+
+
+def read_schema_version(connection: sqlite3.Connection) -> str | None:
+    """Return the version stamped in the database, or ``None`` if there is none.
+
+    A file that has just been created has no tables at all, which is a different
+    thing from a database written by an older version of the tool.
+    """
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'"
+    ).fetchone()
+    return get_meta(connection, "schema_version") if exists else None
+
+
+def drop_tables(connection: sqlite3.Connection) -> None:
+    """Remove every table, leaving an empty database file."""
+    with connection:
+        for table in TABLES:
+            connection.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+def prepare_database(connection: sqlite3.Connection) -> None:
+    """Make the database ready to be written to, rebuilding it if it is old.
+
+    A database written by another schema version is thrown away rather than
+    migrated. It is a cache over a repository, so every row in it can be read
+    out of git again, and there is nothing worth writing migration code to keep.
+    """
+    # Read before creating. create_schema stamps the version unconditionally, so
+    # checking afterwards would find a fresh version on an old set of tables and
+    # conclude that all is well.
+    stored = read_schema_version(connection)
+    if stored is not None and stored != SCHEMA_VERSION:
+        drop_tables(connection)
+    create_schema(connection)
 
 
 def set_meta(connection: sqlite3.Connection, key: str, value: str) -> None:
@@ -142,7 +180,7 @@ def write_commits(connection: sqlite3.Connection, commits) -> None:
         )
         connection.executemany(
             "INSERT INTO commit_files (commit_sha, path, old_path, change_type,"
-            " added_lines, deleted_lines) VALUES (?, ?, ?, ?, ?, ?)",
+            " added_lines, deleted_lines, similarity) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     commit.sha,
@@ -151,6 +189,7 @@ def write_commits(connection: sqlite3.Connection, commits) -> None:
                     change.change_type,
                     change.added_lines,
                     change.deleted_lines,
+                    change.similarity,
                 )
                 for commit in rows
                 for change in commit.changes
@@ -215,6 +254,7 @@ def _assemble(connection: sqlite3.Connection, where: str, parameters=()) -> list
                 added_lines=row["added_lines"],
                 deleted_lines=row["deleted_lines"],
                 old_path=row["old_path"],
+                similarity=row["similarity"],
             )
         )
 

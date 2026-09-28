@@ -8,7 +8,7 @@ import pytest
 from codearchaeology.analysis import analyze
 from codearchaeology.history import Commit, FileChange, read_commits
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles, load_lifecycles
-from sample_repo import build_lifecycle_repo
+from sample_repo import build_lifecycle_repo, build_rename_boundary_repo
 
 FIXTURE_COMMITS = 8
 FIXTURE_LIVES = 7
@@ -23,6 +23,13 @@ def repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture(scope="module")
 def lives(repository: Path) -> tuple[Lifecycle, ...]:
     return build_lifecycles(read_commits(repository))
+
+
+@pytest.fixture(scope="module")
+def boundary_lives(tmp_path_factory: pytest.TempPathFactory) -> tuple[Lifecycle, ...]:
+    """Lives for the three files that sit either side of the rename threshold."""
+    boundary = build_rename_boundary_repo(tmp_path_factory.mktemp("boundary-repo"))
+    return build_lifecycles(read_commits(boundary))
 
 
 def _lives_of(lives: tuple[Lifecycle, ...], path: str) -> list[Lifecycle]:
@@ -149,6 +156,39 @@ def test_the_first_commit_births_every_file_it_contains(lives) -> None:
         "kept.py",
         "plain.py",
     ]
+
+
+def test_the_threshold_splits_three_files_differently(boundary_lives) -> None:
+    """The cliff itself, pinned down.
+
+    Three files are renamed in one commit, each with a different number of lines
+    rewritten. Forty rewritten lines still clears git's default 50% similarity,
+    so that file stays whole and carries both names. Fifty and eighty do not, so
+    those two end at their old name and a separate file is born at the new one.
+    """
+    kept = _lives_of(boundary_lives, "under.py")
+
+    assert len(kept) == 1
+    assert kept[0].path_history == ("under.py", "under_after.py")
+    assert kept[0].is_alive
+
+    for name in ("over", "mostly"):
+        died = _lives_of(boundary_lives, f"{name}.py")[0]
+        born = _lives_of(boundary_lives, f"{name}_after.py")[0]
+
+        assert not died.is_alive
+        assert died.path_history == (f"{name}.py",)
+        assert born.created.change_type == "A"
+        assert born.path_history == (f"{name}_after.py",)
+
+
+def test_a_rename_that_survived_carries_the_score_git_gave_it(
+    boundary_lives,
+) -> None:
+    """The score travels with the event, so a near miss stays visible."""
+    under = _lives_of(boundary_lives, "under.py")[0]
+
+    assert [event.similarity for event in under.events] == [None, 56]
 
 
 def test_the_order_of_the_input_does_not_matter(repository: Path, lives) -> None:

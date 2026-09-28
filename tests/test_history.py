@@ -12,6 +12,7 @@ from codearchaeology.history import (
     parse_commits,
     read_commits,
 )
+from sample_repo import build_rename_boundary_repo
 
 
 @pytest.fixture
@@ -86,6 +87,40 @@ def test_binary_file_has_no_line_counts(commits: list[Commit]) -> None:
     assert change.is_binary
     assert change.added_lines is None
     assert change.deleted_lines is None
+
+
+def test_rename_records_gits_similarity_score(commits: list[Commit]) -> None:
+    """A rename that changed nothing scores 100, which is git's upper bound."""
+    rename = _find(commits, "Move app module into the core package")
+
+    (change,) = rename.changes
+    assert change.similarity == 100
+
+
+def test_a_rename_that_rewrote_lines_scores_lower(tmp_path: Path) -> None:
+    repository = build_rename_boundary_repo(tmp_path / "boundary")
+
+    # Newest first, so the commit that renames is the one on the left.
+    renaming, _ = read_commits(repository)
+    scored = {
+        change.path: change.similarity
+        for change in renaming.changes
+        if change.change_type == "R"
+    }
+
+    assert scored == {"under_after.py": 56}
+
+
+def test_only_renames_carry_a_similarity_score(commits: list[Commit]) -> None:
+    """Git scores renames and copies. Every other change type leaves it empty."""
+    scored = {
+        change.change_type
+        for commit in commits
+        for change in commit.changes
+        if change.similarity is not None
+    }
+
+    assert scored == {"R"}
 
 
 def test_deletion_is_recorded(commits: list[Commit]) -> None:

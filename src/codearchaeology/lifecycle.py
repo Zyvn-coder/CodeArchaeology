@@ -50,6 +50,7 @@ class LifecycleEvent:
     old_path: str | None
     added_lines: int | None
     deleted_lines: int | None
+    similarity: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,7 @@ def build_lifecycles(commits: Iterable[Commit]) -> tuple[Lifecycle, ...]:
                     old_path=change.old_path,
                     added_lines=change.added_lines,
                     deleted_lines=change.deleted_lines,
+                    similarity=change.similarity,
                 )
             )
 
