@@ -4,8 +4,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.1, complete.** The six commands below work today. The project
-> is not on PyPI yet, so there is no `pip install` for it.
+> **Status: v0.2, complete.** The six commands below work today: the three v0.1
+> brought, plus `hotspots`, `files` and `file`. The project is not on PyPI yet,
+> so there is no `pip install` for it.
 
 ## Why this project exists
 
@@ -37,7 +38,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.1.0
+archaeology 0.2.0
 ```
 
 ## Usage
@@ -457,7 +458,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 | Stage | What it adds | Status |
 |---|---|---|
 | v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
-| v0.2 | File lifecycle, code hotspots | In development |
+| v0.2 | File lifecycle, code hotspots, and a JSON output for other programs | Done |
 | v0.3 | AST analysis, function and class evolution | Planned |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
 | v0.5 | Developer memory — your own technical usage over time | Planned |

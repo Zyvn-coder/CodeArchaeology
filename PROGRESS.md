@@ -10,17 +10,22 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing commits `261a7f9`, `e657f87` and
-`278bf00`, plus the benchmark work that is in the working tree but not committed
-yet.**
+**Last updated: 2026-09-28, describing the v0.2.0 release.**
 
 ## Where the project stands
+
+**v0.2.0 is released.** The user ran the acceptance checklist over 22 items; all
+of them pass, and the last three — the roadmap status, the README status line and
+the version itself — were the release. `main` and the tag are pushed, and CI is
+green on all four jobs.
 
 v0.1 is finished and pushed: `analyze`, `timeline` and `commit` work, and the
 suite runs green on Linux and Windows, Python 3.11 and 3.13.
 
-v0.2 is in progress, and everything built so far is **data layer with no way to
-see it**. Four units in a row were spent on models that no command reads yet:
+v0.2 is feature-complete: every part of its model has a command in front of it.
+It was built one unit at a time, and the first three units were data layer with
+nothing to see them yet, which is why the table below has a "user-visible?"
+column at all:
 
 | Unit | What it added | User-visible? |
 |---|---|---|
@@ -32,8 +37,8 @@ see it**. Four units in a row were spent on models that no command reads yet:
 | 6 | the `file` and `files` commands, and `file.py` behind the first | yes |
 | JSON | `--json` on `file`, `files` and `hotspots` | yes |
 
-Every part of the v0.2 model now has a command in front of it. `analyze` fills
-the database; `timeline`, `hotspots`, `files`, `file` and `commit` read it back.
+`analyze` fills the database; `timeline`, `hotspots`, `files`, `file` and
+`commit` read it back.
 
 The `--json` row has no unit number because the user asked for it as a standing
 principle rather than as a numbered unit: "CLI → JSON → Web UI → AI". `timeline`
@@ -144,6 +149,7 @@ now says the limit is on language, not on when to start.
 | `--limit` is not to be optimized now | The user's call, and the measurement backs it: `--limit` only affects what is printed, the whole history is read before it is sliced, and slicing is not where the time goes. Optimizing it would be work on a line that is already flat. |
 | The benchmark measures four operations, not one | They do not scale alike, and the interesting fact — that two of them cost the same for a reason rather than an accident — is invisible from a single number. A benchmark that measured only the timeline would have shown nothing wrong and told nobody why. |
 | The benchmark runs by hand and is not in CI | At 200,000 commits it takes minutes, and a wall-clock assertion would fail whenever the machine is busy. It is a tool for a question, not a gate. |
+| A test compares every copy of the version | It is written down in four places — `pyproject.toml`, `__version__`, and the two READMEs' install examples — and nothing compared them. A release that bumped one and not the others would ship a package whose own `--version` disagrees with its metadata, or a README showing a version nobody can install, and no test would have failed. Verified by breaking each copy in turn and watching the test fail. |
 
 ## Traps already found
 
@@ -231,21 +237,19 @@ now says the limit is on language, not on when to start.
    byte-identical JSON as well. The user asked for both, so both exist. If one of
    them should become something else — an inventory including deleted files, say
    — that is their call.
-4. **The benchmark work is not committed.** `benchmarks/benchmark.py` and the
-   two READMEs are in the working tree, green, waiting on the user's word.
-5. **The benchmark is not covered by anything.** Nothing runs
+4. **The benchmark is not covered by anything.** Nothing runs
    `benchmarks/benchmark.py`, so a rename in the modules it imports breaks it
    silently until someone tries to use it. That is a deliberate trade — a test
    that runs a benchmark muddies what the suite is for — but it is a trade, not
    an oversight, and a smoke run at a few hundred commits would close it cheaply
    if it ever bites.
-6. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
+5. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 192 tests
+$ uv run pytest                 # 193 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

@@ -4,8 +4,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.1，已完成。** 下面六个命令现在就能用。项目还没有发布到 PyPI，
-> 所以暂时没有 `pip install` 可用。
+> **状态：v0.2，已完成。** 下面六个命令现在就能用：v0.1 带来的三条，加上
+> `hotspots`、`files` 和 `file`。项目还没有发布到 PyPI，所以暂时没有
+> `pip install` 可用。
 
 ## 这个项目要解决什么问题
 
@@ -36,7 +37,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.1.0
+archaeology 0.2.0
 ```
 
 ## 用法
@@ -428,7 +429,7 @@ benchmarks/
 | 阶段 | 增加什么 | 状态 |
 |---|---|---|
 | v0.1 | Git 扫描、提交历史、文件改动、SQLite 存储、CLI 时间线 | 已完成 |
-| v0.2 | 文件生命周期、代码热点 | 开发中 |
+| v0.2 | 文件生命周期、代码热点，以及给别的程序读的 JSON 输出 | 已完成 |
 | v0.3 | AST 分析、函数与类的演化 | 计划中 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 计划中 |
 | v0.5 | Developer Memory —— 你自己的技术使用轨迹 | 计划中 |
