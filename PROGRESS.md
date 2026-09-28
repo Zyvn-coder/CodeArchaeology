@@ -107,11 +107,12 @@ Verified on 2026-09-28: the only runtime dependencies are `typer` and `rich`, an
 `anthropic`, `langchain`, `transformers`, `ast`, `flask`, `fastapi`, `django`,
 `streamlit` or `gradio`. Re-run that check before claiming any of it still holds.
 
-**One wording trap in the charter.** `AGENTS.md` §5.4 says AST analysis is
-Python-only for v0.1–v0.3, which reads as though AST is in scope now and merely
-language-limited. The roadmap in the README is unambiguous — AST is v0.3 — but
-the charter is what gets read first, so a session that starts proposing AST work
-can point at that line. The rule above is the one that governs.
+**The charter carries this too.** `AGENTS.md` §5.7 lists the same four, so a
+session that reads the charter before anything else meets the boundary first.
+§5.4 was reworded at the same time: it used to say AST analysis was Python-only
+for v0.1–v0.3, which read as though AST were in scope now and merely
+language-limited, and a session proposing AST work could point at that line. It
+now says the limit is on language, not on when to start.
 
 ## Decisions and why
 
