@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.1, complete.** The three commands below work today. The project
+> **Status: v0.1, complete.** The four commands below work today. The project
 > is not on PyPI yet, so there is no `pip install` for it.
 
 ## Why this project exists
@@ -144,6 +144,49 @@ HEAD        78c0647a
 
 The exit code stays 0: the stored history is readable, it is only behind.
 
+### Show the files that change most
+
+`hotspots` ranks files by how many commits touched them. A file is counted by
+identity rather than by name, so one that was renamed appears once carrying its
+whole history instead of once per name it ever had.
+
+```console
+$ archaeology hotspots ~/projects/sample-project
+Most Active Files
+
+1. core/app.py
+   3 commits
+   +19 / -0
+
+2. README.md
+   1 commit
+   +3 / -0
+
+3. assets/logo.png
+   1 commit
+   +0 / -0
+
+4. core/cache.py
+   1 commit
+   +12 / -0
+
+5. 工具/文本.py
+   1 commit
+   +5 / -0
+
+Frequent change is not importance: the reason each of these files is busy is not something this tool can see.
+```
+
+`--limit N` shows fewer files and says how many are hidden. `--all` shows every
+one. Files that have been deleted are left out, because a hotspot is a place and
+a file that is gone is no longer one.
+
+**A hotspot is not a verdict.** The same count can come from core code, from code
+that keeps breaking, from requirements that keep moving, from a refactor in
+progress, or from a file that is simply edited often. CodeArchaeology cannot tell
+those apart, so it does not try: it reports how often a file changed and stops
+there.
+
 ### Inspect one commit
 
 `commit` shows one commit in full. A prefix of the sha is enough, as in git.
@@ -201,7 +244,7 @@ command to name the file directly.
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its three commands
+    cli.py          the Typer application and its four commands
     analysis.py     running an analysis: read the repository, write the database
     cache.py        where analysis databases live
     history.py      running git and parsing its output into Commit objects

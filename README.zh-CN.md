@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.1，已完成。** 下面三个命令现在就能用。项目还没有发布到 PyPI，
+> **状态：v0.1，已完成。** 下面四个命令现在就能用。项目还没有发布到 PyPI，
 > 所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
@@ -138,6 +138,45 @@ HEAD        78c0647a
 
 退出码仍然是 0：存下来的历史读得出来，只是落后了。
 
+### 查看改动最频繁的文件
+
+`hotspots` 按「动过这个文件的提交数」排名。文件按**身份**计数而不是按名字，所以一个
+改过名的文件只会出现一次，并带着它完整的历史，而不是每换一个名字就多一行。
+
+```console
+$ archaeology hotspots ~/projects/sample-project
+Most Active Files
+
+1. core/app.py
+   3 commits
+   +19 / -0
+
+2. README.md
+   1 commit
+   +3 / -0
+
+3. assets/logo.png
+   1 commit
+   +0 / -0
+
+4. core/cache.py
+   1 commit
+   +12 / -0
+
+5. 工具/文本.py
+   1 commit
+   +5 / -0
+
+Frequent change is not importance: the reason each of these files is busy is not something this tool can see.
+```
+
+`--limit N` 少显示几个，并告诉你还剩多少。`--all` 显示全部。已被删除的文件不在榜单
+里 —— 热点是一个「地方」，而已经不存在的文件不再是地方。
+
+**热点不是判决。** 同一个数字可能来自核心代码、来自不断出问题的代码、来自反复变动
+的需求、来自正在进行中的重构，也可能只是这个文件被编辑得比较勤。CodeArchaeology
+分不清这些，所以它不去分：它只报告一个文件被改了多少次，到此为止。
+
 ### 查看单个提交
 
 `commit` 完整展示一个提交。sha 给前缀就够，和 git 的习惯一致。
@@ -192,7 +231,7 @@ No file changes recorded (git prints no diff for a merge commit).
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与三个命令
+    cli.py          Typer 应用与四个命令
     analysis.py     一次分析：读仓库、写数据库
     cache.py        分析数据库放在哪
     history.py      调用 git 并把它的输出解析成 Commit 对象

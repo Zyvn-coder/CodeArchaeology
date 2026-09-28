@@ -10,7 +10,7 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing the project at commit `c482b2a`.**
+**Last updated: 2026-09-28, describing the project at commit `a83a0eb`.**
 
 ## Where the project stands
 
@@ -25,11 +25,11 @@ see it**. Four units in a row were spent on models that no command reads yet:
 | 1 | `lifecycle.py` — one file's identity across renames, deletes and reuse | no |
 | 2 | the rename similarity git reports, stored; schema version 1 to 2 | no |
 | 3 | `statistics.py` — the numbers that summarise a file's life | one stderr warning |
-| 4 | `hotspots.py` — ranking files by how often they change | no |
+| 4 | `hotspots.py`, and the `hotspots` command that prints the ranking | yes |
 
-Both halves of v0.2 are now built at the data layer, and neither is reachable
-from the command line. That is the biggest open risk in the project: four units
-of model with nothing exercising it end to end.
+`lifecycle.py` and `statistics.py` are still not reachable from the command line:
+`archaeology file <path>` does not exist, so the path history and the per-file
+numbers can only be seen through the tests.
 
 ## Decisions and why
 
@@ -98,17 +98,16 @@ of model with nothing exercising it end to end.
 
 ## Next
 
-1. **The first command that shows any of this**: `archaeology file <path>`, with
-   the lifecycle's path history and its statistics.
-2. **A ranking command** to go with it, listing the most changed files. Whatever
-   it is called, it must not present frequency as importance.
+1. **`archaeology file <path>`**: the lifecycle's path history and its statistics.
+   That is the last part of the v0.2 model with no command in front of it.
+2. Otherwise v0.2 is complete at both layers.
 3. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 130 tests
+$ uv run pytest                 # 136 tests
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```

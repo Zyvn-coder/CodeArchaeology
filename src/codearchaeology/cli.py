@@ -1,6 +1,7 @@
 """Command line entry point for CodeArchaeology.
 
-v0.1 is under construction: ``analyze``, ``timeline`` and ``commit`` work.
+v0.1 is under construction: ``analyze``, ``timeline``, ``hotspots`` and
+``commit`` work.
 """
 
 from pathlib import Path
@@ -19,6 +20,8 @@ from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import GitError, find_repository_root
+from codearchaeology.hotspots import rank_hotspots
+from codearchaeology.lifecycle import load_lifecycles
 from codearchaeology.timeline import build_table, load_timeline
 
 app = typer.Typer(
@@ -149,6 +152,48 @@ def timeline(
     hidden = len(commits) - len(rows)
     if hidden:
         typer.echo(f"\n{hidden} more commits. Use --all to see them.")
+
+
+@app.command()
+def hotspots(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    limit: int = typer.Option(
+        20, "--limit", "-n", min=1, help="How many files to show."
+    ),
+    show_all: bool = typer.Option(False, "--all", help="Show every file."),
+) -> None:
+    """Show the files that change most often."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        lives = load_lifecycles(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    rows = rank_hotspots(lives)
+    selected = rows if show_all else rows[:limit]
+
+    typer.echo("Most Active Files")
+    typer.echo()
+    for position, row in enumerate(selected, start=1):
+        commits = "commit" if row.commits == 1 else "commits"
+        typer.echo(f"{position}. {row.current_path}")
+        typer.echo(f"   {row.commits} {commits}")
+        typer.echo(f"   +{row.additions} / -{row.deletions}")
+        typer.echo()
+
+    hidden = len(rows) - len(selected)
+    if hidden:
+        typer.echo(f"{hidden} more files. Use --all to see them.")
+        typer.echo()
+
+    # The count is the whole point of the command, so the command has to say
+    # what the count is not.
+    typer.echo(
+        "Frequent change is not importance: the reason each of these files is"
+        " busy is not something this tool can see."
+    )
 
 
 @app.command()
