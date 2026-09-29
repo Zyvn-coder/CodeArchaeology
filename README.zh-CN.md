@@ -4,9 +4,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.2，已完成。** 下面六个命令现在就能用：v0.1 带来的三条，加上
-> `hotspots`、`files` 和 `file`。项目还没有发布到 PyPI，所以暂时没有
-> `pip install` 可用。
+> **状态：v0.3，已完成。** 下面八个命令现在就能用：v0.1 带来的三条，v0.2 的
+> `hotspots`、`files` 和 `file`，以及 v0.3 的 `ast` 和 `structure`。项目还没有
+> 发布到 PyPI，所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
 
@@ -19,8 +19,8 @@ Git 已经能告诉你代码**改了什么**、**什么时候改的**、**谁改
 
 CodeArchaeology 想把这条线索接回来。
 
-它读取本地 Git 仓库，提取事实（提交、diff、文件变化，之后还有 AST 结构），存入
-SQLite，并重建代码从第一次提交走到今天的过程。
+它读取本地 Git 仓库，提取事实（提交、diff、文件变化，以及每一个 Python 文件版本的
+结构），存入 SQLite，并重建代码从第一次提交走到今天的过程。
 
 ## 环境要求
 
@@ -37,7 +37,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.2.0
+archaeology 0.3.0
 ```
 
 ## 用法
@@ -47,7 +47,7 @@ archaeology 0.2.0
 
 每条读取历史的命令都支持 `--json`，用同样的字段名把同样的事实输出给别的程序读。
 stdout 上只有 JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是最新的，
-输出都能被解析。
+输出都能被解析。`ast` 是例外：它是写入方，打印的是这次做了什么。
 
 ### 分析一个仓库
 
@@ -62,8 +62,9 @@ HEAD        78c0647a
 Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 ```
 
-重复运行会替换掉已存的内容，所以加了新提交、rebase 或 amend 之后放心重跑。
-由旧版本工具写下的数据库也会以同样方式整表重建。
+重复运行会刷新已存的内容，所以加了新提交、rebase 或 amend 之后放心重跑：git 已经没有的
+提交会带着它的行一起消失，还成立的东西都留着。唯一的例外是由旧版本工具写下的数据库——
+那种情况会整表重建，结构层也在内——之后要再跑一次 `ast`。
 
 如果仓库是浅克隆，`analyze` 会在 stderr 上说明。浅克隆里最老的那个提交会被当成
 根提交，于是其中每个文件都看起来诞生在那里，合并提交也会报出它从未做过的改动。
@@ -80,7 +81,7 @@ Range       2024-03-01 to 2024-03-10
 HEAD        78c0647a
 
  SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
- ──────────────────────────────────────────────────────────────────────────────────────────
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
  78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
  bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
  8eaff71d   2024-03-06   Ada Lovelace       1        +6/-0   Fix login bug
@@ -127,14 +128,14 @@ $ archaeology timeline --json --limit 1
 
 ```console
 $ archaeology timeline --limit 2
-Note: this analysis stops at 78c0647a, but HEAD is now a80420c9; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Note: this analysis stops at 78c0647a, but HEAD is now cd173ca5; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
 Repository  /home/you/projects/sample-project
 Commits     6 (9 file changes)
 Range       2024-03-01 to 2024-03-10
 HEAD        78c0647a
 
  SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
- ──────────────────────────────────────────────────────────────────────────────────────────
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
  78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
  bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
 
@@ -341,6 +342,235 @@ Merge branch 'feature/caching'
 No file changes recorded (git prints no diff for a merge commit).
 ```
 
+### 读取 Python 结构
+
+`ast` 读取已存历史里的每一个 Python 文件版本，记录其中有什么：类、函数和方法，以及
+它们的行号范围、装饰器和限定名。这是工具里昂贵的那一半——实测十万个提交，读取加解析
+要以分钟计，而 `analyze` 只要几秒——所以它是一条独立的命令，而不是 `analyze` 的一部分。
+
+```console
+$ archaeology ast ~/projects/sample-project
+Repository   /home/you/projects/sample-project
+Versions     6 file versions, 13 definitions
+Parsed       6 parsed, 0 reused, 0 could not be parsed
+Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+`Parsed` 这一行说的是**这一次**做了什么：已经读过的版本会被复用而不是重新解析，解析
+不了的版本计入第三个数，而不是被悄悄丢掉。只读 Python 文件，历史里的其他文件不参与。
+
+### 结构层的五条规则
+
+下面两条命令打印的一切，都由这五条规则决定，所以值得先读规则再看输出——输出正是被
+它们塑造的。
+
+1. **快照就是事实本身。** `definition_versions` 保存的是每个**读得出来**的文件版本里
+   实际存在过的 definitions。它是快照，不是变更日志：没有变化的 definition 会在下一个
+   版本里再存一次，`unchanged` 是关于那个版本的事实，而不是「没有消息」。
+2. **删除是推导出来的，从不存储。** `change_type` 只允许是 `created`、`modified` 或
+   `unchanged`。已经不存在的 definition 根本没有行；删除由查询层从它所在的那份快照与
+   下一份读出来的快照推导得到。
+3. **解析失败是不确定性，不是删除。** 读不出来的版本会带着解析器自己的原话记为
+   unreadable，并且不产生任何 definition。工具不会从这个「缺席」推出任何结论：文件
+   读不出来的 definition 不会被报成 deleted，命令会明说这个文件读不出来，而不是打印
+   一个「0 个 definition」的列表。
+4. **`change_type` 是缓存的比较结果，不是语义变更日志。** 这三个词说的是一个
+   definition 与**上一份读得出来的快照**的关系。`modified` 意味着它的结构变了，不意味
+   着它的含义变了；`unchanged` 可以跨越一个读不出来的版本，所以每一行都会把「和哪个
+   版本比的」写在旁边。
+5. **`analyze` 与 `ast` 是两趟独立的处理。** `analyze` 写 Git 事实，保持廉价；`ast` 写
+   Python 结构，是昂贵的那一趟。两者都不碰对方的表。
+
+### 查看一个文件的结构
+
+```console
+$ archaeology structure core/app.py ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Version:     2024-03-06 09:00:00 +0000  8eaff71d
+Definitions: 3 (3 functions)
+
+ KIND             DEFINITION             LINES   DECORATORS           CHANGE
+ ──────────────────────────────────────────────────────────────────────────────
+ function         login                    4-7                        modified
+ function         logout                 10-11                        created
+ function         main                   14-15                        unchanged
+```
+
+显示的版本是这个文件最新存下来的那一个；`--commit <前缀>` 可以看它在任何一个改动过它的
+提交上的样子；改过名的文件会以现在的名字显示，并在上面列出它用过的名字。
+
+`LINES` 是那个 definition 在那个版本里的位置。`CHANGE` 就是上面第 4 条说的比较：
+`main` 从第 8 行挪到了第 14 行，仍然是 `unchanged`，因为它本身没变，变的只是它待的
+地方。方法就是「外层作用域是同一文件里的类」的函数，限定名本身已经说明了这一点：
+
+```console
+$ archaeology structure core/cache.py ~/projects/sample-project
+core/cache.py
+Version:     2024-03-05 09:00:00 +0000  63d9a636
+Definitions: 4 (1 class, 3 functions, 3 of them methods)
+
+ KIND             DEFINITION             LINES   DECORATORS           CHANGE
+ ──────────────────────────────────────────────────────────────────────────────
+ class            Cache                   4-12                        created
+ function         Cache.__init__           5-6                        created
+ function         Cache.get                8-9                        created
+ function         Cache.set              11-12                        created
+```
+
+`--json` 把同一个版本输出给别的程序读。版本的状态是明写出来的，不靠「列表是空的」去
+猜；每一行的 change type 是跟哪个版本比的，也写在里面：
+
+```console
+$ archaeology structure core/app.py --json ~/projects/sample-project
+{
+  "path": "core/app.py",
+  "path_history": [
+    "app.py",
+    "core/app.py"
+  ],
+  "commit_sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+  "committed_at": "2024-03-06T09:00:00+00:00",
+  "state": "read",
+  "reason": null,
+  "parse_error": null,
+  "error_lineno": null,
+  "error_offset": null,
+  "compared_with": "ed9c175d27ed94fcfc21cebb09b09a5e093e0aa6",
+  "blind_spots": [],
+  "definitions": [
+    {
+      "qualname": "login",
+      "kind": "function",
+      "lineno": 4,
+      "end_lineno": 7,
+      "decorators": [],
+      "change_type": "modified"
+    },
+    {
+      "qualname": "logout",
+      "kind": "function",
+      "lineno": 10,
+      "end_lineno": 11,
+      "decorators": [],
+      "change_type": "created"
+    },
+    {
+      "qualname": "main",
+      "kind": "function",
+      "lineno": 14,
+      "end_lineno": 15,
+      "decorators": [],
+      "change_type": "unchanged"
+    }
+  ]
+}
+```
+
+### 查看 definitions 的演化
+
+```console
+$ archaeology structure core/app.py --history ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Versions:    3 read, 0 could not be read
+
+login  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 4
+  modified 2024-03-06 09:00:00 +0000  8eaff71d  line 4
+
+main  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 8
+
+logout  function
+  created  2024-03-06 09:00:00 +0000  8eaff71d  line 10
+```
+
+这里没有 `unchanged`。一份 history 是「一个 definition 发生变化的那些时刻」，什么都没
+发生的版本不在其中——但快照里仍然存着它，所以上面的列表里 `main` 显示为 `unchanged`。
+
+删除是推导的，不是从某一行里读出来的。`legacy.py` 在最后一个提交里被删掉了：
+
+```console
+$ archaeology structure legacy.py --history ~/projects/sample-project
+legacy.py
+Versions:    1 read, 1 could not be read
+  78c0647a  the file was not in this commit
+
+parse  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 4
+  deleted  2024-03-10 09:00:00 +0000  78c0647a
+```
+
+数据库里没有任何一行写着 `deleted`，也不可能有：schema 不允许这个词。删掉这个文件的
+那个提交本身也是它的一个版本——一个「文件不在这棵树里」的版本——删除就是从它两侧的
+快照推导出来的。`--history --json` 输出的是同一批事实，每个事件都带着
+`previous_commit_sha`，以及它跨过的 `blind_spots`。
+
+读不出来的文件是不确定性，不是终结。下面这个仓库里，`broken.py` 在一个提交里是好的，
+在下一个提交里有了语法错误：
+
+```console
+$ archaeology structure broken.py ~/projects/broken-project
+broken.py
+Version:     2024-03-02 09:00:00 +0000  88003169
+
+AST analysis unavailable: parse failed
+  SyntaxError: invalid syntax (line 5, column 12)
+```
+
+```console
+$ archaeology structure broken.py --history ~/projects/broken-project
+broken.py
+Versions:    1 read, 1 could not be read
+  88003169  SyntaxError: invalid syntax
+
+ok  function
+  created  2024-03-01 09:00:00 +0000  a0e51834  line 1
+      no ending: 88003169 could not be read, so whether it is still there is not known
+```
+
+解析失败了，所以这个文件里有什么是完全不知道的——连 `ok` 是否还在里面都不知道。工具
+就照实这么说，而不是报一个它看不见的删除，也不是打印「0 个 definition」——那会被读成
+「这个文件里什么都没有」。`SyntaxError:` 后面的话是解析器自己的原话，和说出它的 Python
+版本一起存下来。
+
+`structure` 只读 Python。路径不以 `.py` 结尾、历史里从未出现过这个路径、以及 `--history`
+和 `--commit` 同时给出，这三种情况都会被拒绝并说明原因，而不是用一个看起来合理的答案
+糊弄过去。
+
+### 重新跑 `analyze` 不会把结构清掉
+
+`analyze` 和 `ast` 写的是不同的表，而 `analyze` 只删除 git 已经没有的东西：一次 rebase
+或 amend 会把它带走的提交，连同属于这些提交的文件版本和 definitions 一起移除；还成立
+的东西都留着。例外是数据库里新出现的提交——在 `ast` 再跑一次之前它没有结构，`structure`
+会说清楚该跑哪条命令：
+
+```console
+$ archaeology analyze ~/projects/sample-project
+Repository  /home/you/projects/sample-project
+Commits     7 (10 file changes)
+Range       2024-03-01 to 2024-03-12
+HEAD        cd173ca5
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+$ archaeology structure core/app.py ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Version:     2024-03-12 09:00:00 +0000  cd173ca5
+
+AST analysis unavailable: no version was stored for this commit
+  run 'archaeology ast' to read the file versions git holds
+$ archaeology ast ~/projects/sample-project
+Repository   /home/you/projects/sample-project
+Versions     7 file versions, 17 definitions
+Parsed       1 parsed, 6 reused, 0 could not be parsed
+Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+第二次 `ast` 只解析了那一个新版本，复用了已经读过的六个——正是 `analyze` 留下的那六个。
+如果 `analyze` 把结构扔掉了，这一行会变成 `7 parsed, 0 reused`。唯一会清掉它的是 schema
+重建，而那是在造一个新库，不是对同一个库重扫。
+
 ### 数据库放在哪
 
 数据库文件名是仓库绝对路径的摘要，所以同一个项目的两份检出各有一份库。
@@ -386,14 +616,48 @@ $ uv run python benchmarks/benchmark.py --commits 20000 100000 200000
   也确实是两个不同的问题：按名字回答的是「这个路径」，按身份回答的是「这个文件跨过它
   所有改名的历史」。
 
+### 结构层，单独测量
+
+`ast` 是工具里昂贵的那一半，所以 benchmark 按阶段计时，而不是只给一个总数：从 git 读
+内容、解析、把每个 definition 走成指纹、比较版本、写入。同一份 fixture，Python 3.13，
+在一个空数据库上跑一次：
+
+| 提交数 | 文件版本 | Definitions | 数据库（Git） | 数据库（含 AST） | `ast` 一趟 |
+|---|---|---|---|---|---|
+| 1,000 | 5,000 | 27,000 | 1.3 MB | 10.1 MB | 3.0s |
+| 10,000 | 50,000 | 270,000 | 12.4 MB | 100.4 MB | 35.6s |
+| 100,000 | 500,000 | 2,700,000 | 124.9 MB | 1008.0 MB | 405.3s |
+
+- **除写入之外，每个阶段都与文件版本数成线性。** 历史变成十倍，读取、解析、遍历和比较
+  都是十倍。写入速度从约 52,000 行/秒降到约 20,000 行/秒（数据库涨过 page cache 之后），
+  但总时间仍然是线性的。
+- **遍历树比它前面的解析更贵。** 把每个 definition 渲染出来并哈希，代价大约是解析它
+  所在文件的 3.5 倍，各个规模上都是如此。
+- **快照存储的行数是一份变更日志的 2.78–2.99 倍**（这份 fixture 上）。这个比例取决于
+  历史的改动量——本仓库自己的是 2.15——所以 benchmark 打印两个行数，而不是一个倍数。
+- **结构层占用的存储大约是 Git 事实的八倍**，对一个持有六个 definitions 的版本而言。
+  在十万个提交的规模上，125 MB 的 Git 事实会变成 1 GB 的数据库。要拿这个数字做规划，
+  而不是 v0.2 的数据库体积；它会随每个文件的 definition 数量变化。
+- **第二趟几乎和第一趟一样贵**——十万提交时 374s 对 405s。它不解析任何东西、复用了全部
+  版本，但仍然要把每个版本读回来并比较：省下的是解析和遍历，付出的代价是每个版本一次
+  查询。
+
+这一趟会自己报告成功率，两万提交时是 `parsed 90000, failed 10000`——10.0%，正是 fixture
+里十分之一文件不可解析的比例——而且每一行都带着读它的那个解释器。
+
 ## 项目结构
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与六个命令
+    cli.py          Typer 应用与八个命令
     analysis.py     一次分析：读仓库、写数据库
+    ast_pass.py     AST 这一趟：读每个 Python 文件版本，存下它的结构
     cache.py        分析数据库放在哪
     history.py      调用 git 并把它的输出解析成 Commit 对象
+    objects.py      从 git 里读文件内容，一次读很多个
+    definitions.py  一个文件版本的 definitions，从它的字节里读出来
+    definition_history.py  从快照推导每个 definition 的一辈子
+    structure.py    结构视图：一个版本、一份 history，以及两者的 JSON
     storage.py      SQLite 表结构与查询
     timeline.py     时间线视图：行数据、表格、JSON
     commit.py       单个提交的视图
@@ -407,7 +671,7 @@ tests/
     sample_repo.py  构造一个确定性的小仓库供测试使用
     conftest.py     把这个仓库交给每个测试的 fixture
 benchmarks/
-    benchmark.py    四个操作，规模由你指定
+    benchmark.py    Git 各操作与 AST 这一趟，规模由你指定
 ```
 
 ## 核心原则
@@ -419,9 +683,9 @@ benchmarks/
 2. **Local First** —— 任何 Git 仓库都必须能在本地分析，不依赖远程服务。
 3. **Evidence First** —— 任何结论都必须能追溯到具体的 commit / diff / AST 节点。
    禁止凭空推测。
-4. **Python-only v0.x** —— v0.3 之前 AST 分析只支持 Python。
+4. **Python-only v0.x** —— AST 分析读的是 Python。
    多语言支持在路线图上，不在当前范围内。
-5. **先 CLI，后 Web** —— v0.3 之前不做 Web UI。
+5. **先 CLI，后 Web** —— v0.x 的界面就是命令行，没有 Web UI。
 6. **SQLite 是唯一存储** —— v0.x 不引入 PostgreSQL / Redis / 向量数据库。
 
 ## 路线图
@@ -430,7 +694,7 @@ benchmarks/
 |---|---|---|
 | v0.1 | Git 扫描、提交历史、文件改动、SQLite 存储、CLI 时间线 | 已完成 |
 | v0.2 | 文件生命周期、代码热点，以及给别的程序读的 JSON 输出 | 已完成 |
-| v0.3 | AST 分析、函数与类的演化 | 计划中 |
+| v0.3 | AST 分析、函数与类的演化 | 已完成 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 计划中 |
 | v0.5 | Developer Memory —— 你自己的技术使用轨迹 | 计划中 |
 | v0.6 | AI 参与的改动分析与回放 | 计划中 |
@@ -439,7 +703,8 @@ benchmarks/
 
 ## 已知限制
 
-- `analyze` 每次都重扫全部历史，没有增量更新。
+- `analyze` 每次都重扫全部历史，两条命令都没有增量：AST 这一趟每次都会走遍所有
+  Python 文件版本。
 - `--limit` 只影响打印出来的内容：整个历史会先从数据库读出来，然后再切片。
 - 合并提交会记下父节点但没有文件变化，因为 `git log` 对合并不输出 diff。
 - 二进制文件不记录增删行数，显示为 `-`。
@@ -454,6 +719,18 @@ benchmarks/
   `analyze` 会在 stderr 上就此给出提示。
 - `commit` 只接受 sha 和 sha 前缀，不接受 `HEAD`、分支名这类引用。
 - 数据库以仓库绝对路径为键，所以移动或重命名仓库后需要重新分析。
+- 结构层只读 Python，而且一个 definition 靠「同一个文件里的限定名」确定身份。改了名的
+  函数是一次死亡加一次出生，而不是一个「变化过的」definition；搬到另一个文件里的
+  definition 也不会和它离开的那个建立联系。这两条都是刻意的：建立这种联系是在做证据
+  支持不了的推断。
+- 解析不了的文件版本会带着解析器的原话记为 unreadable，绝不会记成「一个空文件」。它的
+  definitions 在一个能解析的版本出现之前都是未知的，也不会因为这次失败而被报成删除。
+- 第二趟 `ast` 不解析任何东西、复用所有已读版本，但仍然要把每个版本读回来比较，所以
+  几乎和第一趟一样贵：十万提交时 374s 对 405s。
+- 每一行都带着读它的那个 Python 版本，所以由 3.11 写入、被 3.13 读取的数据库会把那些
+  版本重新读一遍，而不是把两个解释器的结果混在一起。
+- 一个 definition 是按它自身的结构比较的，不是按位置：只在文件里挪了地方的函数是
+  `unchanged`。
 - 由 CI 在 Linux 与 Windows、Python 3.11 与 3.13 下验证；macOS 尚未验证。
 
 ## 许可证

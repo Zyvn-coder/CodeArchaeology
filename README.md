@@ -4,9 +4,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.2, complete.** The six commands below work today: the three v0.1
-> brought, plus `hotspots`, `files` and `file`. The project is not on PyPI yet,
-> so there is no `pip install` for it.
+> **Status: v0.3, complete.** The eight commands below work today: the three
+> v0.1 brought, plus `hotspots`, `files` and `file` from v0.2, and `ast` and
+> `structure` from v0.3. The project is not on PyPI yet, so there is no
+> `pip install` for it.
 
 ## Why this project exists
 
@@ -20,8 +21,9 @@ refactor. `git log` keeps every individual event but loses the story.
 CodeArchaeology tries to put the story back.
 
 It reads a local Git repository, extracts the facts (commits, diffs, file
-changes, and later AST structure), stores them in SQLite, and reconstructs how
-the code travelled from its first commit to its current state.
+changes, and the structure of every Python file version), stores them in SQLite,
+and reconstructs how the code travelled from its first commit to its current
+state.
 
 ## Requirements
 
@@ -38,7 +40,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.2.0
+archaeology 0.3.0
 ```
 
 ## Usage
@@ -50,7 +52,8 @@ database in your cache directory.
 Every command that reads the history takes `--json`, which prints the same facts
 in the same names for other programs to read. Only the JSON goes to stdout — the
 note about a stale analysis goes to stderr — so the output stays parseable
-whether or not the snapshot is current.
+whether or not the snapshot is current. `ast` is the exception: it writes rather
+than reads, and prints a summary of what it did.
 
 ### Analyze a repository
 
@@ -65,9 +68,11 @@ HEAD        78c0647a
 Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 ```
 
-Running it again replaces what was stored, so it is safe to repeat after new
-commits, a rebase or an amend. A database written by an older version of the
-tool is rebuilt from scratch the same way.
+Running it again refreshes what was stored, so it is safe to repeat after new
+commits, a rebase or an amend: a commit git no longer has takes its rows with it,
+and everything still true stays. A database written by an older version of the
+tool is the one case that is rebuilt from scratch — the structure layer included
+— so run `ast` again afterwards.
 
 If the repository is a shallow clone, `analyze` says so on stderr. The oldest
 commit such a clone has is treated as the root, so every file in it looks like it
@@ -86,7 +91,7 @@ Range       2024-03-01 to 2024-03-10
 HEAD        78c0647a
 
  SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
- ──────────────────────────────────────────────────────────────────────────────────────────
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
  78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
  bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
  8eaff71d   2024-03-06   Ada Lovelace       1        +6/-0   Fix login bug
@@ -134,14 +139,14 @@ goes to stderr, which keeps stdout parseable for `--json`:
 
 ```console
 $ archaeology timeline --limit 2
-Note: this analysis stops at 78c0647a, but HEAD is now a80420c9; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Note: this analysis stops at 78c0647a, but HEAD is now cd173ca5; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
 Repository  /home/you/projects/sample-project
 Commits     6 (9 file changes)
 Range       2024-03-01 to 2024-03-10
 HEAD        78c0647a
 
  SHA        DATE         AUTHOR         FILES          +/-   MESSAGE
- ──────────────────────────────────────────────────────────────────────────────────────────
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
  78c0647a   2024-03-10   Ada Lovelace       3        +5/-5   Add logo and unicode module, drop legacy helper
  bbed4c45   2024-03-08   Ada Lovelace       0        +0/-0   Merge branch 'feature/caching'
 
@@ -358,6 +363,256 @@ Merge branch 'feature/caching'
 No file changes recorded (git prints no diff for a merge commit).
 ```
 
+### Read the Python structure
+
+`ast` reads every Python file version in the stored history and records what each
+one held: its classes, functions and methods, with their line ranges, decorators
+and qualified names. It is the expensive half of the tool — measured, reading and
+parsing a hundred thousand commits takes minutes where `analyze` takes seconds —
+which is why it is a command of its own rather than part of `analyze`.
+
+```console
+$ archaeology ast ~/projects/sample-project
+Repository   /home/you/projects/sample-project
+Versions     6 file versions, 13 definitions
+Parsed       6 parsed, 0 reused, 0 could not be parsed
+Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+`Parsed` counts this run: a version that was already read is reused rather than
+parsed again, and a version nobody could parse is counted in the third number
+rather than dropped quietly. Only Python files are read; every other file in the
+history is left out.
+
+### What the structure layer is
+
+Five rules decide everything the commands below print, so they are worth reading
+before the output — the output is shaped by them.
+
+1. **The snapshot is the fact.** `definition_versions` holds the definitions that
+   actually existed in each file version that could be read. It is a snapshot,
+   not a change log: a definition that did not change is stored again in the next
+   version, and `unchanged` is a fact about that version rather than an absence
+   of news.
+2. **A deletion is derived, never stored.** `change_type` may only be `created`,
+   `modified` or `unchanged`. A definition that is gone has no row at all, and
+   the deletion is derived by the query layer, from the snapshot the definition
+   was in and the next snapshot that was read.
+3. **A parse failure is uncertainty, not a deletion.** A version nobody could
+   read is recorded as unreadable, with the parser's own words, and gets no
+   definitions. Nothing is concluded from that absence: a definition whose file
+   went dark is not reported as deleted, and the command says the file could not
+   be read instead of printing a listing of zero definitions.
+4. **`change_type` is a cached comparison, not a semantic change log.** The three
+   words say how a definition relates to the previous snapshot that could be
+   read. `modified` means its structure differs, not that its meaning changed,
+   and `unchanged` can span a version that could not be read — which is why the
+   version each row was compared with is named beside it.
+5. **`analyze` and `ast` are separate passes.** `analyze` writes the Git facts
+   and stays cheap; `ast` writes the Python structure and is the expensive one.
+   Neither touches the other's tables.
+
+### Show a file's structure
+
+```console
+$ archaeology structure core/app.py ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Version:     2024-03-06 09:00:00 +0000  8eaff71d
+Definitions: 3 (3 functions)
+
+ KIND             DEFINITION             LINES   DECORATORS           CHANGE
+ ──────────────────────────────────────────────────────────────────────────────
+ function         login                    4-7                        modified
+ function         logout                 10-11                        created
+ function         main                   14-15                        unchanged
+```
+
+The version shown is the file's latest stored one; `--commit <prefix>` shows the
+file as it was at any commit that changed it, and a file that was renamed is
+shown under the name it has now, with the names it carried above it.
+
+`LINES` is where the definition sat in that version. `CHANGE` is the comparison
+from rule 4 above: `main` moved from line 8 to line 14 and is `unchanged`, because
+what it is did not change, only where it sits. A method is a function whose
+enclosing scope is a class in the same file, which the qualified name already
+says:
+
+```console
+$ archaeology structure core/cache.py ~/projects/sample-project
+core/cache.py
+Version:     2024-03-05 09:00:00 +0000  63d9a636
+Definitions: 4 (1 class, 3 functions, 3 of them methods)
+
+ KIND             DEFINITION             LINES   DECORATORS           CHANGE
+ ──────────────────────────────────────────────────────────────────────────────
+ class            Cache                   4-12                        created
+ function         Cache.__init__           5-6                        created
+ function         Cache.get                8-9                        created
+ function         Cache.set              11-12                        created
+```
+
+`--json` prints the same version for other programs to read. The state of the
+version is spelled out rather than left to be inferred from an empty list, and
+the version the change types were compared with is named:
+
+```console
+$ archaeology structure core/app.py --json ~/projects/sample-project
+{
+  "path": "core/app.py",
+  "path_history": [
+    "app.py",
+    "core/app.py"
+  ],
+  "commit_sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+  "committed_at": "2024-03-06T09:00:00+00:00",
+  "state": "read",
+  "reason": null,
+  "parse_error": null,
+  "error_lineno": null,
+  "error_offset": null,
+  "compared_with": "ed9c175d27ed94fcfc21cebb09b09a5e093e0aa6",
+  "blind_spots": [],
+  "definitions": [
+    {
+      "qualname": "login",
+      "kind": "function",
+      "lineno": 4,
+      "end_lineno": 7,
+      "decorators": [],
+      "change_type": "modified"
+    },
+    {
+      "qualname": "logout",
+      "kind": "function",
+      "lineno": 10,
+      "end_lineno": 11,
+      "decorators": [],
+      "change_type": "created"
+    },
+    {
+      "qualname": "main",
+      "kind": "function",
+      "lineno": 14,
+      "end_lineno": 15,
+      "decorators": [],
+      "change_type": "unchanged"
+    }
+  ]
+}
+```
+
+### Show how the definitions changed
+
+```console
+$ archaeology structure core/app.py --history ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Versions:    3 read, 0 could not be read
+
+login  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 4
+  modified 2024-03-06 09:00:00 +0000  8eaff71d  line 4
+
+main  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 8
+
+logout  function
+  created  2024-03-06 09:00:00 +0000  8eaff71d  line 10
+```
+
+`unchanged` does not appear here. A history is the moments a definition changed,
+and a version where nothing happened to it is not one of them — the snapshot
+still holds it, which is why the listing above shows `main` as `unchanged`.
+
+A deletion is derived, not read out of a row. `legacy.py` was dropped in the last
+commit:
+
+```console
+$ archaeology structure legacy.py --history ~/projects/sample-project
+legacy.py
+Versions:    1 read, 1 could not be read
+  78c0647a  the file was not in this commit
+
+parse  function
+  created  2024-03-01 09:00:00 +0000  392cc0db  line 4
+  deleted  2024-03-10 09:00:00 +0000  78c0647a
+```
+
+The database has no row saying `deleted`, and could not have: the schema refuses
+the word. The commit that dropped the file is a version of it like any other —
+one in which the file was not in the tree — and the deletion is derived from the
+snapshots either side of it. `--history --json` carries the same facts, with each
+event's `previous_commit_sha` and the `blind_spots` it was derived across.
+
+A file nobody could read is uncertainty, not an ending. This second repository
+has `broken.py` fine in one commit and a syntax error in the next:
+
+```console
+$ archaeology structure broken.py ~/projects/broken-project
+broken.py
+Version:     2024-03-02 09:00:00 +0000  88003169
+
+AST analysis unavailable: parse failed
+  SyntaxError: invalid syntax (line 5, column 12)
+```
+
+```console
+$ archaeology structure broken.py --history ~/projects/broken-project
+broken.py
+Versions:    1 read, 1 could not be read
+  88003169  SyntaxError: invalid syntax
+
+ok  function
+  created  2024-03-01 09:00:00 +0000  a0e51834  line 1
+      no ending: 88003169 could not be read, so whether it is still there is not known
+```
+
+The parse failed, so nothing is known about what the file held — not even whether
+`ok` was still in it. The tool says that, rather than reporting a deletion it
+cannot see or printing "0 definitions", which would read as a file that held
+none. The words after `SyntaxError:` are the parser's own, recorded together with
+the version of Python that said them.
+
+`structure` reads Python only. A path that does not end in `.py`, a path the
+stored history never touched, and `--history` given together with `--commit` are
+each refused with a message rather than answered with something plausible.
+
+### Re-running `analyze` does not throw the structure away
+
+`analyze` and `ast` write different tables, and `analyze` removes only what git no
+longer has: a rebase or an amend takes its commits, and the file versions and
+definitions that belonged to them, out of the database. Everything still true
+stays. A commit that is new to the database is the exception — it has no
+structure until `ast` runs again, and `structure` says which command to run:
+
+```console
+$ archaeology analyze ~/projects/sample-project
+Repository  /home/you/projects/sample-project
+Commits     7 (10 file changes)
+Range       2024-03-01 to 2024-03-12
+HEAD        cd173ca5
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+$ archaeology structure core/app.py ~/projects/sample-project
+core/app.py
+History:     app.py -> core/app.py
+Version:     2024-03-12 09:00:00 +0000  cd173ca5
+
+AST analysis unavailable: no version was stored for this commit
+  run 'archaeology ast' to read the file versions git holds
+$ archaeology ast ~/projects/sample-project
+Repository   /home/you/projects/sample-project
+Versions     7 file versions, 17 definitions
+Parsed       1 parsed, 6 reused, 0 could not be parsed
+Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+The second `ast` parsed the one new version and reused the six that were already
+read — the six `analyze` left alone. Had `analyze` thrown the structure away, that
+line would read `7 parsed, 0 reused`. A schema rebuild is the one thing that does
+clear it, and that is a different database being made rather than a rescan of the
+same one.
+
 ### Where the database lives
 
 Databases are named after a digest of the repository's absolute path, so two
@@ -413,14 +668,56 @@ What the curve says:
   question: it answers for a path as written, not for the file across its
   renames.
 
+### The structure layer, measured separately
+
+The `ast` pass is the expensive half of the tool, so the benchmark times it in
+phases rather than as one total: reading the contents out of git, parsing them,
+walking each definition into a fingerprint, comparing versions, and inserting.
+Same fixture, Python 3.13, the pass run once on a fresh database:
+
+| Commits | File versions | Definitions | Database (Git) | Database (+ AST) | `ast` pass |
+|---|---|---|---|---|---|
+| 1,000 | 5,000 | 27,000 | 1.3 MB | 10.1 MB | 3.0s |
+| 10,000 | 50,000 | 270,000 | 12.4 MB | 100.4 MB | 35.6s |
+| 100,000 | 500,000 | 2,700,000 | 124.9 MB | 1008.0 MB | 405.3s |
+
+- **Every phase is linear in the number of file versions except the insert.** Ten
+  times the history costs ten times the reading, the parsing, the walking and the
+  comparing. The insert slows from about 52,000 rows a second to about 20,000 as
+  the database grows past the page cache; the total stays linear anyway.
+- **The walk over the tree costs more than the parse that comes before it.**
+  Rendering each definition and hashing it costs about three and a half times the
+  parsing of the file it came from, at every scale.
+- **A snapshot stores 2.78 to 2.99 rows for every row a change log would keep**
+  over this fixture. The ratio is a property of how much churn a history has —
+  this repository's was 2.15 — so the benchmark prints both counts rather than a
+  growth factor.
+- **The structure layer costs about eight times the Git facts to store**, for a
+  version holding six definitions. At a hundred thousand commits, 125 MB of Git
+  facts become a one-gigabyte database. That is the figure to plan with instead
+  of v0.2's database size, and it moves with the number of definitions per file.
+- **A second pass costs almost as much as the first** — 374s against 405s at a
+  hundred thousand commits. It parses nothing and reuses every version, but it
+  still reads each one back and compares it: the saving is the parse and the
+  walk, and what it pays instead is one query per version.
+
+The pass reports its own success rate, `parsed 90000, failed 10000` at twenty
+thousand commits — 10.0%, which is the fixture's one-file-in-ten — and every row
+carries the interpreter that read it.
+
 ## Project structure
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its six commands
+    cli.py          the Typer application and its eight commands
     analysis.py     running an analysis: read the repository, write the database
+    ast_pass.py     the AST pass: read every Python file version, store its structure
     cache.py        where analysis databases live
     history.py      running git and parsing its output into Commit objects
+    objects.py      reading file contents out of git, many at a time
+    definitions.py  one file version's definitions, read from its bytes
+    definition_history.py  deriving each definition's life from the snapshots
+    structure.py    the structure view: one version, one history, and their JSON
     storage.py      the SQLite schema and the queries over it
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
@@ -434,7 +731,7 @@ tests/
     sample_repo.py  builds a small deterministic repository for the tests
     conftest.py     the fixture that hands that repository to every test
 benchmarks/
-    benchmark.py    the four operations, measured at whatever scale you ask
+    benchmark.py    the Git operations and the AST pass, at whatever scale you ask
 ```
 
 ## Principles
@@ -447,9 +744,10 @@ These are not aspirations. They constrain what the code is allowed to do.
    remote service involved.
 3. **Evidence First** — Every conclusion must be traceable to a specific
    commit, diff, or AST node. No guessing.
-4. **Python-only in v0.x** — AST analysis supports Python only until v0.3.
-   Multi-language support is on the roadmap, not in scope.
-5. **CLI before web** — No web UI before v0.3.
+4. **Python-only in v0.x** — AST analysis reads Python. Multi-language support is
+   on the roadmap, not in scope.
+5. **CLI before web** — The command line is the interface in v0.x. There is no
+   web UI.
 6. **SQLite is the only store** — No PostgreSQL, Redis, or vector databases
    in v0.x.
 
@@ -459,7 +757,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 |---|---|---|
 | v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
 | v0.2 | File lifecycle, code hotspots, and a JSON output for other programs | Done |
-| v0.3 | AST analysis, function and class evolution | Planned |
+| v0.3 | AST analysis, function and class evolution | Done |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
 | v0.5 | Developer memory — your own technical usage over time | Planned |
 | v0.6 | AI-assisted change analysis and replay | Planned |
@@ -469,7 +767,8 @@ stage is stable.
 
 ## Known limitations
 
-- `analyze` always rescans the whole history. There is no incremental update.
+- `analyze` always rescans the whole history, and neither command is incremental:
+  the AST pass walks every Python file version every time it runs.
 - `--limit` only affects what is printed: the whole history is read from the
   database before it is sliced.
 - Merge commits are stored with their parents but with no file changes, because
@@ -493,6 +792,23 @@ stage is stable.
   branch name.
 - The database is keyed on the repository's absolute path, so moving or renaming
   a repository means analyzing it again.
+- The structure layer reads Python only, and a definition is identified by its
+  qualified name inside one file. A function that was renamed is a death and a
+  birth rather than one definition that changed, and a definition that moved to
+  another file is not linked to the one it left. Both are deliberate: linking
+  them would be an inference the evidence does not support.
+- A file version that could not be parsed is stored as unreadable, with the
+  parser's words, and never as a file that held nothing. Its definitions are
+  unknown until a version that parses, and none of them is reported as deleted on
+  the strength of the failure.
+- A second `ast` run parses nothing and reuses every version it already read, but
+  still reads each version back and compares it, so it costs nearly as much as
+  the first: 374s against 405s at a hundred thousand commits.
+- Every stored row carries the version of Python that read it, so a database
+  written by 3.11 and read by 3.13 has those versions read again rather than the
+  two interpreters' results being mixed.
+- A definition is compared by its own structure, not by where it sits, so a
+  function that only moved down its file is `unchanged`.
 - Tested on Linux and Windows, on Python 3.11 and 3.13, by CI. macOS is untested.
 
 ## License
