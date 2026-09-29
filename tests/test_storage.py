@@ -1,6 +1,7 @@
 """Tests for the SQLite storage layer."""
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -182,3 +183,48 @@ def test_foreign_keys_reject_a_file_without_its_commit(
             " VALUES (?, ?, ?)",
             ("0" * 40, "orphan.py", "A"),
         )
+
+
+def test_a_change_type_may_only_be_a_letter_git_reports(
+    connection: sqlite3.Connection, commits: list[Commit]
+) -> None:
+    """Git's letter goes in; the view's word for it does not.
+
+    The column holds what ``--raw`` said, and the tool's translation of it —
+    "deleted" for ``D``, "renamed" for ``R`` — is the view's, not a fact. The
+    constraint is what keeps the two from being written into the same column.
+    """
+    sha = commits[0].sha
+
+    def insert(path: str, change_type: str) -> None:
+        connection.execute(
+            "INSERT INTO commit_files (commit_sha, path, change_type)"
+            " VALUES (?, ?, ?)",
+            (sha, path, change_type),
+        )
+
+    # Every letter git documents for the --raw status field, including the two
+    # this command line cannot produce (C needs -C, B needs -B): a constraint
+    # narrower than git's alphabet would reject an observation, and a repository
+    # that hits one would fail to analyze at all.
+    for index, letter in enumerate("ACDMRTUXB"):
+        insert(f"letter{index}.py", letter)
+
+    for word in ("deleted", "renamed", "modified", "added", "moved",
+                 "same_function_as"):
+        with pytest.raises(sqlite3.IntegrityError):
+            insert(f"{word}.py", word)
+
+
+def test_the_writer_cannot_store_a_word_either(
+    connection: sqlite3.Connection, commits: list[Commit]
+) -> None:
+    """The guard is on the path ``analyze`` takes, not only on hand-written SQL."""
+    commit = next(commit for commit in commits if commit.changes)
+    translated = replace(
+        commit,
+        changes=(replace(commit.changes[0], change_type="deleted"),),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        write_commits(connection, [translated])

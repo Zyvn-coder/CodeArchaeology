@@ -1,7 +1,9 @@
 """Command line entry point for CodeArchaeology.
 
-Six commands: ``analyze`` fills the database, ``timeline``, ``hotspots``,
-``files``, ``file`` and ``commit`` read it back.
+Eight commands: ``analyze`` fills the database with the git history and ``ast``
+fills it with the structure of every Python file version in that history;
+``timeline``, ``hotspots``, ``files``, ``file``, ``commit`` and ``structure``
+read it back.
 """
 
 from pathlib import Path
@@ -17,8 +19,10 @@ from codearchaeology.analysis import (
     stored_head_sha,
 )
 from codearchaeology.analysis import analyze as run_analysis
+from codearchaeology.ast_pass import PYTHON_SUFFIX, run_ast_pass
 from codearchaeology.cache import database_path
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
+from codearchaeology.definition_history import load_histories
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
@@ -27,6 +31,16 @@ from codearchaeology.hotspots import build_json as build_ranking_json
 from codearchaeology.hotspots import build_table as build_files_table
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
+from codearchaeology.structure import (
+    build_history,
+    build_history_json,
+    build_version,
+    build_version_json,
+    build_version_table,
+    definitions_in,
+    nothing_read_note,
+    select_version,
+)
 from codearchaeology.timeline import build_table, load_timeline
 
 app = typer.Typer(
@@ -119,6 +133,42 @@ def analyze(
     )
     typer.echo(f"HEAD        {result.head_sha[:SHORT_SHA_LENGTH]}")
     typer.echo(f"Database    {result.database}")
+
+
+@app.command()
+def ast(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+) -> None:
+    """Read the structure of every Python file version the history holds."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        # ast reads the history the database has, so it has to admit when that
+        # history stops short of the repository, exactly as the other reading
+        # commands do.
+        _warn_if_behind(repository_root, database)
+        result = run_ast_pass(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    if result.skipped:
+        typer.echo(
+            f"Note: {result.skipped} file versions could not be read from git and"
+            f" have no structure recorded",
+            err=True,
+        )
+
+    typer.echo(f"Repository   {result.repository_root}")
+    typer.echo(
+        f"Versions     {result.file_versions} file versions,"
+        f" {result.definitions} definitions"
+    )
+    typer.echo(
+        f"Parsed       {result.parsed} parsed, {result.reused} reused,"
+        f" {result.failed} could not be parsed"
+    )
+    typer.echo(f"Database     {result.database}")
 
 
 @app.command()
@@ -343,3 +393,105 @@ def commit(
 
     console = Console()
     console.print(build_file_table(found.changes, console.width))
+
+
+@app.command()
+def structure(
+    file_path: str = typer.Argument(..., help="File to show, as git writes it."),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    history: bool = typer.Option(
+        False,
+        "--history",
+        help="Show how each definition in the file changed over its life.",
+    ),
+    commit: str | None = typer.Option(
+        None,
+        "--commit",
+        help="Show the file as it was at this commit. A prefix is enough."
+        " Defaults to the file's latest stored version.",
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Show a Python file's structure, and how its definitions changed."""
+    if history and commit is not None:
+        typer.echo(
+            "Error: --commit picks one version and --history shows all of them;"
+            " use one or the other",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    wanted = normalise(file_path)
+    if not wanted.endswith(PYTHON_SUFFIX):
+        typer.echo(
+            f"Error: {wanted} is not a Python file; this version reads Python only",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        histories = load_histories(repository_root, database, wanted)
+        if commit is not None:
+            chosen = load_commit(repository_root, database, commit)
+    except (GitError, AnalysisError, CommitNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_behind(repository_root, database)
+
+    if not histories:
+        typer.echo(
+            f"Error: nothing in the stored history touched {wanted};"
+            f" use 'archaeology files' to see what is there",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if history:
+        note = nothing_read_note(histories, wanted)
+        if note:
+            typer.echo(f"Error: {note}", err=True)
+            raise typer.Exit(code=1)
+
+        if as_json:
+            # Nothing else may go to stdout: the output has to stay parseable.
+            typer.echo(build_history_json(histories, wanted))
+            return
+
+        # A name can belong to more than one file. All of them are shown, oldest
+        # first, because picking one would hide the others.
+        for position, found in enumerate(histories):
+            if position:
+                typer.echo()
+            typer.echo(build_history(found))
+        return
+
+    selected = select_version(histories, None if commit is None else chosen.sha)
+    if selected is None:
+        if commit is None:
+            typer.echo(f"Error: the stored history has no version of {wanted}", err=True)
+        else:
+            typer.echo(
+                f"Error: the stored history has no version of {wanted} at"
+                f" {chosen.sha[:SHORT_SHA_LENGTH]}; a file version is a commit that"
+                f" changed the file — 'archaeology structure {wanted} --history'"
+                f" lists them",
+                err=True,
+            )
+        raise typer.Exit(code=1)
+
+    selected_history, version = selected
+    if as_json:
+        typer.echo(build_version_json(selected_history, version))
+        return
+
+    typer.echo(build_version(selected_history, version))
+    definitions = definitions_in(version)
+    if definitions:
+        console = Console()
+        typer.echo()
+        console.print(build_version_table(definitions, console.width))

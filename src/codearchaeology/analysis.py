@@ -17,7 +17,6 @@ from codearchaeology.history import (
 )
 from codearchaeology.storage import (
     SCHEMA_VERSION,
-    clear_history,
     connect,
     get_meta,
     prepare_database,
@@ -171,10 +170,12 @@ def analyze(path, database=None) -> AnalysisResult:
         # version, so that a stale cache is refreshed instead of failing on a
         # column that is not there yet.
         prepare_database(connection)
-        # A rescan replaces what is already there. Without this, commits that a
-        # rebase or an amend removed from git would stay in the database
-        # forever.
-        clear_history(connection)
+        # The stored history becomes exactly what git has now: the commits that
+        # are still there are written, and the ones a rebase or an amend took out
+        # of git go with everything built on them. The AST rows of the commits
+        # that stayed are left where they are — they are keyed on the sha, so
+        # they are still true, and discarding them would cost a full re-parse to
+        # learn the same thing.
         write_commits(connection, commits)
         set_meta(connection, "repository_root", str(repository_root))
         set_meta(connection, "head_sha", head_sha)

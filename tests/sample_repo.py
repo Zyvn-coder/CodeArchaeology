@@ -441,12 +441,31 @@ LARGE_COMMITS = 1000
 LARGE_FILES = 60
 LARGE_TOUCHED = 5
 LARGE_LINES = 22
+# What one version of one file holds: three functions, a class and its two
+# methods. The AST layer's totals are this times the number of versions, which is
+# what makes them arithmetic rather than measurement.
+LARGE_FUNCTIONS = 3
+LARGE_DEFINITIONS = LARGE_FUNCTIONS + 3
 
 
 def _large_file(index: int, edit: int) -> bytes:
-    """One revision of one file in the large fixture: a fixed size, edited once."""
+    """One revision of one file in the large fixture: valid Python, edited once.
+
+    A fixed size and a fixed shape — ``LARGE_LINES`` lines and
+    ``LARGE_DEFINITIONS`` definitions — with one function's operator flipped per
+    edit, so a version has one modified definition and the rest unchanged. The
+    v0.2 tests read this fixture for its line counts; the v0.3 ones read it for
+    its rows, and a file that does not parse would give them none.
+    """
     body = f"# module {index}\n"
-    body += "".join(f"line {number}\n" for number in range(LARGE_LINES - 2))
+    for number in range(LARGE_FUNCTIONS):
+        operator = "-" if number == edit % LARGE_FUNCTIONS else "+"
+        body += f"def function_{number}(value):\n"
+        body += f"    return value {operator} {number}\n\n\n"
+
+    body += "class Holder:\n"
+    body += "    def get(self):\n        return 0\n\n"
+    body += "    def put(self, value):\n        return value\n\n\n"
     body += f"# edit {edit}\n"
     return body.encode()
 
@@ -601,6 +620,196 @@ def add_commit(repo, message, timestamp=LATER_DATE):
     _write_file(repo, "extra.txt", f"{message}\n")
     _commit(repo, timestamp, message)
     return git_output(repo, "rev-parse", "HEAD").strip()
+
+
+DEFINITION_V1 = '''"""A module whose functions change."""
+
+
+def login(user):
+    return user == "admin"
+
+
+def helper(value):
+    return value + 1
+'''
+
+DEFINITION_V2 = '''"""A module whose functions change."""
+
+
+def login(user, password):
+    return user == "admin" and password == "secret"
+
+
+def helper(value):
+    return value + 1
+'''
+
+DEFINITION_V3 = DEFINITION_V2 + '''
+
+def logout(user):
+    print(user)
+'''
+
+# The same body under a new name. The pass must read this as one definition
+# disappearing and another appearing, never as a rename.
+DEFINITION_V4 = '''"""A module whose functions change."""
+
+
+def authenticate(user, password):
+    return user == "admin" and password == "secret"
+
+
+def helper(value):
+    return value + 1
+
+
+def logout(user):
+    print(user)
+'''
+
+# A missing colon: this version of the file cannot be read at all.
+DEFINITION_BROKEN = '''"""A module whose functions change."""
+
+
+def login(user, password)
+    return user == "admin"
+'''
+
+
+def build_definition_repo(destination):
+    """Create a repository whose one Python file changes in every way that matters.
+
+    Six commits, one file::
+
+        A  login and helper
+        B  login rewritten               (login modified, helper unchanged)
+        C  logout added                  (logout created)
+        D  login renamed to authenticate (one gone, one created)
+        E  the file stops parsing        (a recorded failure, not a set of deletions)
+        F  back to what D held           (unchanged, compared across E)
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    versions = (
+        DEFINITION_V1,
+        DEFINITION_V2,
+        DEFINITION_V3,
+        DEFINITION_V4,
+        DEFINITION_BROKEN,
+        DEFINITION_V4,
+    )
+    for number, content in enumerate(versions, start=1):
+        _write_file(repo, "app.py", content)
+        _commit(repo, _day(number), f"definition change {number}")
+
+    return repo
+
+
+# DEFINITION_V1 with login taken out, which is what a file can come back as
+# after a version nobody could read.
+DEFINITION_V1_WITHOUT_LOGIN = '''"""A module whose functions change."""
+
+
+def helper(value):
+    return value + 1
+'''
+
+
+def build_gap_repo(destination):
+    """Create the repository where a file's versions go dark.
+
+    Three commits and three files, each going dark in a different way::
+
+        1  vanished.py, dark.py and gone.py each hold login and helper
+        2  all three stop parsing
+        3  vanished.py is read again and no longer holds login, dark.py is
+           untouched so it is still dark, and gone.py is deleted
+
+    One gap, three endings, and each is the case the history layer has to get
+    right: a deletion that happened *somewhere* inside the gap, a definition
+    whose file was never read again so its end is unknown, and a definition that
+    went with the file.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    for name in ("vanished.py", "dark.py", "gone.py"):
+        _write_file(repo, name, DEFINITION_V1)
+    _commit(repo, _day(1), "Create three files holding the same two definitions")
+
+    for name in ("vanished.py", "dark.py", "gone.py"):
+        _write_file(repo, name, DEFINITION_BROKEN)
+    _commit(repo, _day(2), "Break all three files")
+
+    _write_file(repo, "vanished.py", DEFINITION_V1_WITHOUT_LOGIN)
+    (repo / "gone.py").unlink()
+    _commit(repo, _day(3), "Drop login while the files were dark, and delete gone.py")
+
+    return repo
+
+
+def build_interleaved_repo(destination):
+    """Create the repository where a file is deleted on one branch and edited on another.
+
+    Four commits::
+
+        A  app.py holds login and helper
+        |\\
+        B |  delete app.py            (branch gone)
+        | C  rewrite login            (main)
+        |/
+        M  merge branch 'gone', keeping app.py
+
+    The delete comes first in time, so the file's life reads: born, deleted,
+    edited — a hole in the middle of one life rather than an end followed by a
+    second one. Git only reports that shape when a delete on one branch and an
+    edit on another are interleaved by the clock, which the fixed timestamps
+    arrange.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "app.py", DEFINITION_V1)
+    _commit(repo, _day(1), "Create app.py")
+
+    git_output(repo, "switch", "--create", "gone")
+    (repo / "app.py").unlink()
+    _commit(repo, _day(2), "Delete app.py on the branch")
+
+    git_output(repo, "switch", "main")
+    _write_file(repo, "app.py", DEFINITION_V2)
+    _commit(repo, _day(3), "Rewrite login on main")
+
+    # Keeping our whole tree is what a person resolving this conflict would do:
+    # the branch deleted the file, main changed it, and the file stays. The
+    # ``ours`` strategy is the only one that resolves a delete against an edit,
+    # which the ``ours`` option of the default strategy does not.
+    git_output(
+        repo,
+        "merge",
+        "--no-ff",
+        "-s",
+        "ours",
+        "--message",
+        "Merge branch 'gone', keeping app.py",
+        "gone",
+        timestamp=_day(4),
+    )
+
+    return repo
 
 
 if __name__ == "__main__":

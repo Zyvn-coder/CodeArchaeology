@@ -10,9 +10,17 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-09-28, describing the v0.2.0 release.**
+**Last updated: 2026-09-29, the day v0.3 was released. The version described
+below is v0.3.0.**
 
 ## Where the project stands
+
+**v0.3.0 is written and documented.** Unit 9 was the release: both READMEs now
+describe all eight commands, the structure layer's five rules are stated in them,
+the roadmap row says Done, and the version is 0.3.0 in the four places the
+existing test compares. Every console block in both files was replayed against
+the fixtures at release time and matched, line for line. What has not happened is
+the push and the tag — those are the user's to run, as they were for v0.2.
 
 **v0.2.0 is released.** The user ran the acceptance checklist over 22 items; all
 of them pass, and the last three — the roadmap status, the README status line and
@@ -45,6 +53,94 @@ principle rather than as a numbered unit: "CLI → JSON → Web UI → AI". `tim
 already had `--json` from v0.1; this added it to the three commands v0.2 brought,
 so the whole read side of the CLI is now machine-readable.
 
+## v0.3 scope — and the rule that it does not grow
+
+The user started v0.3 on 2026-09-29 with one standing instruction, in their own
+words: **"v0.3 不要中途增加功能"** — no feature gets added along the way. Anything
+that looks like a good idea mid-flight gets written into the table below and
+left alone until v0.3 is finished; it does not get built.
+
+v0.3 is AST analysis: which functions and classes a Python file contained at each
+commit, and how each of them changed over that file's life. **The frozen
+decisions are in `docs/v0.3-design.md`** — the record shapes, the fingerprint, the
+failure table and the measured traps. This section is the summary; that file is
+the contract. The plan, one unit at a time, in the order the data has to be built:
+
+| Unit | What it adds | User-visible? |
+|---|---|---|
+| 0 | `docs/v0.3-design.md` — the design freeze. No code. | no |
+| 1 | `definitions.py` — one file version's definitions, read from its bytes | no |
+| 2 | `objects.py` — one `git cat-file --batch` process, kept open for many reads | no |
+| 3 | schema version 3, the two tables the AST pass fills, and a rescan that keeps them | no |
+| 4 | `ast_pass.py` and `archaeology ast` — the pass that fills them | yes |
+| 5 | `definition_history.py` — the histories derived from those snapshots | no |
+| 6 | `structure.py` and `archaeology structure --history` — the evolution view | yes |
+| 7 | `archaeology structure <path>` and the JSON of both faces — the read side in full | yes |
+| 8 | the scale fixture, the phased benchmark, and the analyze regression tests | no |
+| 9 | both READMEs, the roadmap row and the version — the release | yes |
+| 10 | the `CHECK` on `commit_files.change_type`, and schema version 3 → 4 | no |
+
+The user names each unit as it starts, so the table is what has been built. Every
+row of the plan is built, Unit 9 included: the three commands of the freeze §2
+exist, `structure` has all of its faces — `<path>`, `--commit`, `--history`, and
+`--json` on both — and the documentation describes them with real output. v0.3 is
+finished except for the push and the tag.
+
+**Which unit depends on which, and which of them owns what**, is written down in
+`docs/v0.3-design.md` §19 — the user's own division: 3 is "怎么存", 4 is "当前版本
+里有什么，以及和上一可比较版本有什么差异", 5 is "snapshot 串起来以后的历史",
+6 is "把历史转成 evolution model", 7 is "把结果展示给用户". Read that section
+before moving a responsibility from one module to another.
+
+Units 1–2 are the data layer, the same shape as v0.2's first three, and for the
+same reason: the model has to be right before there is anything worth looking at.
+
+**Done so far:** Unit 0 (the freeze), Unit 1 (`definitions.py`, 33 tests of its
+own), Unit 2 (`objects.py`, 19 tests), Unit 3 (schema version 3 in
+`storage.py`, 24 tests), Unit 4 (`ast_pass.py` and the `ast` command, 18 tests),
+Unit 5 (`definition_history.py`, 20 tests), Unit 6 (`structure.py` and
+`structure --history`, 17 tests), Unit 7 (the structure of one version, and the
+JSON of both faces, 15 more), Unit 8 (the AST layer's arithmetic at a thousand
+commits, the phased benchmark, and the analyze regression cases, 7 more) and
+Unit 9 (the release: both READMEs, the version, the roadmap row) and Unit 10 (the
+change-type constraint, which is the one place the storage could still have been
+made to hold a conclusion). Unit 1's
+promise — bytes in,
+definitions or a recorded
+failure out, with no Git, SQLite or CLI anywhere near it — is itself a test: it
+reads the module's own source and refuses an import that is not in the allowed
+set. Unit 2's promise — many objects, one process — is a test too, and it counts
+the processes started, so fifty reads would show as fifty. Unit 3's promise — the
+tables hold facts and not identities — is a test as well: it compares both column
+lists against the agreed ones, so a `function_id` appearing later fails the build
+instead of quietly becoming part of the model. The rule that a file which could
+not be parsed is not an empty file is a test too, and it is the one that keeps a
+syntax error from being read later as a deleted function. Unit 5's promise — no
+false certainty about a definition whose file went dark — is a test three times
+over: a deletion derived across a gap has to name the gap, a definition whose file
+never parses again has no deletion event at all, and the derivation's every
+created and modified event is checked against the pass's stored comparison. Unit
+6's promise — that the *lines* do not round the uncertainty off — is a test as
+well: the block is asserted line by line, and `unchanged` is asserted to be absent
+from it.
+
+The user froze the identity rule as **file version + qualified name, with no
+rename inference**. So Unit 5 shows a function that was renamed as a death and a
+birth, and says so, rather than inferring a link the evidence does not support.
+The AST pass is deliberately not part of `analyze`: measured, `analyze` is 45.6s
+at 200,000 commits while extraction runs at 664 files/s, so the AST pass on the
+same repository is about 25 minutes. A user who wants only the git facts must not
+pay for that.
+
+| Not in v0.3 | Why |
+|---|---|
+| AI | v0.4. |
+| A web UI | Same reason as v0.2: it is not the core. |
+| Inferring *why* something changed | Not enough evidence, and inventing it is not the plan. |
+| Languages other than Python | Python-only is the v0.x range. |
+| Complexity scoring, call graphs, dependency analysis | These are not *evolution*; they are different features. |
+| AST similarity used to re-link files git reported as delete + add | The user raised this direction in the Unit 2 spec, but it changes *file* identity, which v0.2 settled on git's evidence alone. Not v0.3 unless the user says otherwise. |
+
 ## The v0.2 test matrix
 
 The user set this matrix for v0.2 and asked for it to be complete rather than
@@ -73,7 +169,10 @@ and a cyclic history that git cannot produce.
 ## Performance
 
 Measured on 2026-09-28 with `benchmarks/benchmark.py`, over generated histories,
-fastest of three runs:
+fastest of three runs. **The generator changed in Unit 8** — it used to write files
+that no parser accepts, and now writes real Python — so these are the git side of
+a slightly different fixture than the table below them. The two are close but not
+comparable line for line; the Unit 8 table is the one to plan v0.3 with.
 
 | Commits | Changes | Repo | DB | `analyze` | `timeline` | `hotspots` | `file <path>` | by name only |
 |---|---|---|---|---|---|---|---|---|
@@ -93,12 +192,75 @@ Three things to carry forward:
 - **Nothing is quadratic.** Doubling the commits roughly doubles every figure.
   Between 20,000 and 100,000 the rise is steeper than fivefold, which is the
   cache falling out of the picture rather than the algorithm changing shape.
+- **Reading content is not the bottleneck.** Measured on 2026-09-29: `objects.py`
+  reads about 5,900 objects a second through one `git cat-file --batch`, 15 MB/s
+  on 2 KB files, so a million file versions is under three minutes against roughly
+  twenty-five minutes of parsing them. The audit's 12,271 files/s was measured
+  under different conditions and does not reproduce today (git alone, with its
+  streams redirected, measures 8,900/s); 6,000/s is the figure to plan with.
+
+- **The pass, measured on 2026-09-29.** Over this repository: 75 file versions and
+  869 definitions in 0.33s, and 0.12s the second time round with all 75 reused
+  (the 869 is the same number the audit reached for a snapshot of this history).
+  Over the 1,000-commit scale fixture: 5,000 file versions in 1.31s, 3,805
+  versions a second, and 0.92s on the second run. Those files are trivial, so the
+  figure that matters for planning is still the parse: 664 real files a second,
+  against 5,900 objects a second for the reading.
+
+- **The AST layer in phases, measured on 2026-09-29** with the fixture's files
+  made real Python (`LARGE_DEFINITIONS` per version, one file in ten unparseable).
+  Python 3.13.5, the pass run once on a fresh database:
+
+  | Commits | Versions | Definitions | DB git | DB +AST | read | parse | extract | compare | insert | total |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | 1,000 | 5,000 | 27,000 | 1.3 MB | 10.1 MB | 0.86s | 0.31s | 1.12s | 0.02s | 0.52s | 3.02s |
+  | 10,000 | 50,000 | 270,000 | 12.4 MB | 100.4 MB | 8.29s | 3.16s | 11.11s | 0.24s | 11.11s | 35.63s |
+  | 20,000 | 100,000 | 540,000 | 24.9 MB | 202.4 MB | 13.93s | 5.24s | 19.13s | 0.38s | 27.42s | 69.09s |
+  | 100,000 | 500,000 | 2,700,000 | 124.9 MB | 1008.0 MB | 67.91s | 25.52s | 100.40s | 2.07s | 192.18s | 405.27s |
+
+  Four things to carry forward, and two open questions:
+
+  - **Everything but the insert is linear.** Ten times the history costs ten times
+    the reading, the parsing, the walking and the comparing.
+  - **The walk costs more than the parse it does first.** `extract` — the canonical
+    rendering and the fingerprint, per definition — is about three and a half times
+    `parse` at every scale. If the pass is ever optimised, that is where the time is.
+  - **The insert rate falls from about 52,000 rows/s to about 20,000** as the
+    database grows from ten megabytes to two hundred. The rate flattens after the
+    first drop, and the total stays linear. Why it falls is *not* established: the
+    candidate is the page cache, since the row key begins with a random sha and the
+    inserts are therefore scattered over a file that no longer fits in it.
+  - **A snapshot stores 2.78–2.99 rows per row a change log would keep** on this
+    fixture, and the audit's 2.15× was this repository's. The ratio is a property
+    of the churn, so the benchmark prints both counts rather than a factor.
+  - **The AST layer costs about eight times the git facts** to store, for a
+    version holding six definitions. That is the number to plan with instead of
+    v0.2's database size, and it moves with the definitions per file. At a hundred
+    thousand commits: 125 MB of git facts become a one-gigabyte database, 2.7
+    million definition rows, and six and three-quarter minutes of pass.
+
+  The two open questions, both worth a unit of their own:
+
+  - **A re-run costs almost as much as the first run** — 374s against 405s at a
+    hundred thousand commits — even though it parses nothing. The saving is the
+    parse and the walk (126s); what it pays instead is one query per version to
+    read back the definitions it is reusing, five hundred thousand small queries
+    where a single one would do. The docstring's claim ("a read and no parsing")
+    is true; what was not known until it was measured is what the read costs.
+  - **The insert rate keeps falling** with the database size (52k rows/s at ten
+    megabytes, 14k at a gigabyte) and the cause is still only a hypothesis: the
+    row key begins with a random sha, so the inserts are scattered over a file
+    that no longer fits in the page cache.
 
 ## Out of scope for v0.2
 
 The user drew this boundary explicitly and the reasons are theirs. A session that
 finds a feature request touching one of these should stop and ask rather than
 build it — these are not "not yet scheduled", they are "do not start".
+
+One row has since expired: AST analysis was forbidden here because it was v0.3,
+and v0.3 has started, so that work is now the job. The other three carry over
+unchanged, and the current boundary is the v0.3 table at the top of this file.
 
 | Not now | Why |
 |---|---|
@@ -149,7 +311,51 @@ now says the limit is on language, not on when to start.
 | `--limit` is not to be optimized now | The user's call, and the measurement backs it: `--limit` only affects what is printed, the whole history is read before it is sliced, and slicing is not where the time goes. Optimizing it would be work on a line that is already flat. |
 | The benchmark measures four operations, not one | They do not scale alike, and the interesting fact — that two of them cost the same for a reason rather than an accident — is invisible from a single number. A benchmark that measured only the timeline would have shown nothing wrong and told nobody why. |
 | The benchmark runs by hand and is not in CI | At 200,000 commits it takes minutes, and a wall-clock assertion would fail whenever the machine is busy. It is a tool for a question, not a gate. |
-| A test compares every copy of the version | It is written down in four places — `pyproject.toml`, `__version__`, and the two READMEs' install examples — and nothing compared them. A release that bumped one and not the others would ship a package whose own `--version` disagrees with its metadata, or a README showing a version nobody can install, and no test would have failed. Verified by breaking each copy in turn and watching the test fail. |
+| A test compares every copy of the version | It is written down in four places — `pyproject.toml`, `__version__`, and the two READMEs' install examples — and nothing compared them. A release that bumped one and not the others would ship a package whose own `--version` disagrees with its metadata, or a README showing a version nobody can install, and no test would have failed. Verified by breaking each copy in turn and watching the test fail. A fifth copy lives in `uv.lock`, generated from `pyproject.toml` and rewritten by the next `uv run`, so it is deliberately not compared: it cannot drift into a state that its own regeneration would not fix. |
+| The failure record names the exception type | "invalid syntax" and "too many levels of indentation" are different problems, and a `RecursionError` is not a syntax problem at all. The stored reason is `TypeName: message`, so nothing downstream has to work out which one it was from the wording of the message. |
+| The fingerprint is a token stream, not a rendered string | The structure has to be walked without recursion — the parser accepts trees that a second recursion of our own would not survive — and a stream can be hashed as it is produced, instead of building a string the size of the definition first. |
+| `parsed_at_version` sits on the `Definition`, not only on the file version | The user's Unit 1 list has it there, and it makes every record self-describing: even the reason a failure carries is the interpreter's own wording, so the record has to say which interpreter said it. The storage layer can keep it once per file version, where it is the same for every definition of that version. |
+| The definition's position is the tuple's order, not a field | `definitions_of` returns them in the order they appear in the file, so the index already is the position. A field would be a second copy of the same fact, and the two could disagree. |
+| One request, one answer, over one process | Writing requests ahead of the answers is not an optimisation here but a deadlock: measured, three thousand requests written before any answer fills git's stdout pipe, git stops reading, and the write fails with `BrokenPipeError`. There is nothing to win either — the reader runs at 5,900 objects/s against 664 file versions/s of parsing. |
+| The reader hands back the identity with the bytes | Every answer's header carries the object id git resolved the request to, so asking for a file version (`<commit>:<path>`) returns that blob's own id beside its content — never a hash computed here. The first draft returned bytes only and left Unit 4 to work the id out again; the user's Unit 2 revision asked for exactly this, and the fix was to stop discarding what git had already said. |
+| `definition_versions` is a snapshot with a change marker, not a change log | **The user settled this**, after the first draft stored only what changed. A change log makes "what did this file look like at this commit" a replay of the file's whole history, and one missing row then corrupts every later answer; a snapshot costs about twice the rows (measured 869 against 404) and keeps every row a fact about one blob. |
+| `position` stays in the key | The user asked for uniqueness on `(commit, path, kind, qualname)`, and that cannot be had: two definitions in one file can share a qualified name — measured, and Unit 1 has a test for it — so that key would keep one and silently drop the other. The position is the index `definitions_of` returns, and it is what tells them apart. |
+| A rescan keeps the AST rows that are still true | **The user settled this too.** `write_commits` now means "the stored history is exactly these commits": it writes them, and removes the ones git no longer has together with their file versions and definitions. The first draft cleared the AST layer on every `analyze`, which threw away minutes of parsing and said nothing about it. |
+| The commit row is updated, not replaced | A file version names its commit, so the foreign key refuses to let that row go while those versions exist — and deleting the versions first is exactly the data loss this unit is about. `INSERT ... ON CONFLICT(sha) DO UPDATE` keeps the row in place. |
+| `change_type` compares against the last version that could be **read** | A version that fails to parse is recorded as a failure and gets no definition rows; the next version that parses is compared against the last one that parsed, so an `unchanged` can span a failure. The user's rule: this is a cached comparison, not a claim that nothing happened in between, and the history layer must not read it as an unbroken chain. |
+| The pass walks file lifecycles, not paths | That is what makes a rename continue rather than restart: after `app.py` moves to `core/app.py`, the definitions in it are `unchanged`, which is the whole point of resolving the predecessor through v0.2's lifecycle walk. |
+| Reuse is keyed on the version, not on the blob | A stored version is reusable exactly when its `content_sha` and `parsed_at_version` are the ones about to be worked out, so a re-run reads and compares but parses nothing. A pure rename carries the same bytes under a new name and is parsed again — the cache is per version because the row that has to be written is per version. |
+| `write_ast_batch` writes a version and its definitions in one transaction | A version whose own row has been replaced while its definitions are still the previous run's says two things at once, and that is the state an interrupted pass must never leave behind. The pass writes in batches of 500 so that committing is not the cost of the run and a crash keeps what it finished. |
+| `interpreter_version` is public | The pass has to record it for a version that contained no definitions at all, where there is no `Definition` to read it from — and two copies of that string would be two things to keep in step. |
+| `clear_history` stays, though nothing calls it now | It is the whole-database wipe, and a rescan is no longer that. Its docstring says so plainly, so the next session does not reach for it by name; keeping it costs nothing and a caller that wants a clean database has it. |
+| Replacing a file version cascades to its definitions | Without `ON DELETE CASCADE`, a second run of the pass would leave the first run's definitions behind, and every caller would have to delete them in the right order. The database can enforce it once instead. |
+| `change_type` may only be `created`, `modified` or `unchanged` | The user's rule: a definition that is gone gets no row, so `deleted` is not a word this column may hold. A `CHECK` in the schema says the same three, which turns a wrong word into an error at the write instead of a row nobody can interpret. `kind` is constrained the same way, against Unit 1's three words. |
+| A history is derived on the spot, never stored | The tables hold facts about blobs; a history is what a rule makes of them. Storing it would freeze a rule the user may still change, and the first rule that changed would leave rows that cannot be corrected. Derived, a rule change takes effect on the next read. |
+| The derivation repeats the comparison instead of reading `change_type` | The column is a cache keyed on the pass's identity rule, and this layer has to be able to say what *it* derived. A test walks every stored row and holds the two to each other in both directions, so a rule that changes in one place and not the other fails the build. |
+| A blind spot is a version of the file like any other | `FileHistory.versions` holds the unreadable versions in the order they happened, beside the readable ones, so a reader can see where the file went dark and for how long. The first draft kept them only in the pending gap, which left them out of the file's own history. |
+| The gap is carried by the event that spans it, and by the life that has no ending | The user's §5.7: a deletion derived across a parse failure must name the versions it was derived across, and a definition whose file's latest versions are unreadable must not be given a deletion at all. The event carries the first; `DefinitionLife.unresolved` carries the second. |
+| The *n*-th definition of a name continues the *n*-th life | The same rule the pass compares by, and the only one available when one file defines one name twice. `occurrence` on the life is that index, 0 for nearly every name; without it, two lives with one name would be two records nothing could tell apart. |
+| One shared tuple of blind spots per step | Every event of a step gets the same tuple object. A file with a long gap and many definitions would otherwise hold one copy of the gap per definition, and a gap is one fact about the file. |
+| The command's shape is `structure <path> --history` | **The user chose it** over a fourth command, which is the answer to the question the freeze §8 left open. The other half of `structure` is a later unit, so until it exists the command without `--history` says that and exits 1 — printing a plausible-looking answer for a question it cannot answer is the one thing worse than refusing. |
+| The unreadable versions are listed in the header | A gap that no event happened to span — every definition unchanged across it — would otherwise leave no trace in the output at all, and the reader would take a complete-looking history for a complete one. The reason is printed with the commit, so a parse failure and a file that was not in the tree are told apart on sight. |
+| The gap is said on the line *under* the event | The event line keeps one shape (change, moment, commit, line) and the note carries the part that cannot be dated: "at some point after X; Y could not be read, so when it went is not known". Putting it on the same line made every gapped event a different width, and the note reads as a footnote to the line above it. |
+| A creation with nothing readable before it says "first seen here" | `created` would claim it was born at the first version that showed it, and with the file's earlier versions unread that is exactly the certainty the unit exists to avoid. It is the same rule as §5.7, applied to the other end of a life. |
+| The rendering is its own module, named after the command | `definition_history` is a derivation over facts and imports no terminal; `structure` is what a reader sees and holds both halves of the command. `file.py` and `timeline.py` already split the two jobs this way. |
+| The query reads `definition_versions`, and there is no change-log table | **The user's rule.** `change_type` is a cached comparison on a snapshot row, and a deletion is derived from two snapshots by the query layer — the history JSON carries the derived `change` beside the `previous_commit_sha` and `blind_spots` it came from, so nothing has to be taken on trust. |
+| The default version is the file's latest stored one | It is what the stored data can answer, it does not refuse a file that has since been deleted, and `--commit <prefix>` picks any other. A commit that did not change the file has no version to show, and the error says what a file version is and points at `--history`. |
+| An unreadable version prints a reason, never an empty listing | The user's §7.2: zero definitions would read as a version that held none. The three reasons are told apart — `parse failed` (with the parser's own words), `no version was stored for this commit`, `the file was not in this commit` — and the JSON carries the same distinction as `state` + `reason` + `parse_error`, so no reader infers it from an empty list. |
+| `compared_with` and `blind_spots` are shown beside the change types | `change_type` is the pass's cached comparison against the nearest readable version. A version compared across unreadable ones says which version that was; without it, `unchanged` on a version whose file went dark in between reads as "nothing happened". |
+| The commit that ends a file's life is one of its versions | A correction, not a feature: until Unit 7 the deletion commit was reachable from no query, so `structure app.py` on a deleted file answered about the last version before it and never said the file was gone. It is a blind spot with the reason `the file was not in this commit`, which is the same fact a deletion in the middle of a life already recorded. |
+| The scale fixture's files are real Python | A fixture whose files no parser accepts gives the AST layer nothing to walk, compare or insert, so a benchmark over it would report a fast pass and prove nothing. The v0.2 assertions — 22 lines, one net change, no renames — are unchanged by the content. |
+| The pass's phases are measured by wrapping its calls, and every wrapper counts | The pass imports what it uses by name, so replacing the name times the call without touching the pass. The count is the guard: a wrapper that stopped being called would otherwise report a phase that got infinitely fast, which is the one failure a benchmark must not have. |
+| The pass is timed once, on a database with no AST rows | A second run reuses everything and measures the cache. The re-run is timed separately and reported as its own column, because "what does it cost when nothing changed" is a question of its own. |
+| The benchmark prints both row counts, not a growth factor | A change log stores what changed; a snapshot stores every definition of every version, so the ratio is a property of the churn. The audit's 2.15× was this repository; the fixture measures 2.78–2.99×. Printing both lets anyone recompute it for their own history. |
+| The method count is prose, the kind column is a fact | A method is a function whose enclosing scope is a class in the same file — derivable from the qualname, and said in the counts line. The table keeps the stored kind word, and the JSON carries `kind` and `qualname` as stored, so no consumer has to know a second vocabulary. |
+| The five rules of the structure layer are stated in the README, before the commands | **The user's Unit 9 asked for the release documentation to say five things explicitly**: the AST layer is snapshot-based, a deletion is derived rather than stored, a parse failure is uncertainty rather than a deletion, `change_type` is a cached comparison rather than a semantic change log, and `analyze` and `ast` are separate passes. They are written as five numbered rules ahead of the two commands that demonstrate them, so a reader meets the contract before the output rather than having to infer it from a table. §17 of the design doc records where each one landed. |
+| The `analyze`/`ast` separation is shown with a run, not asserted | The README claims `analyze` does not throw the structure away and that a new commit needs `ast` again. Both are shown by the same three-command sequence — analyze, `structure` (which says no version was stored), `ast` (which parses one and reuses six) — over a repository that gains a commit after the pass has run. An assertion nobody can reproduce is worth less than a block a reader can. |
+| The READMEs' blocks are replayed against the fixtures, by a script that is not kept | Every console block in both files — 46 of them — was replayed at release time and compared with the command's real output, line for line, which is how the two stale lines below were found. The script lives outside the repository on purpose: it is a release step, not a gate, and it depends on the fixture module and on Windows path handling. Two things bit while writing it, and are worth knowing before writing it again: stderr has to be merged *before* stdout (a note is printed above the block it warns about), and a database path must be replaced before the repository path, because the first begins with the second. |
+| `commit_files.change_type` carries a `CHECK`, and the schema version moved with it | The column held git's letter with nothing stopping a word being written into it — the last place where a conclusion could have been stored beside the observation it came from. The constraint allows git's nine documented letters rather than the subset this command line can produce, because a constraint narrower than git's alphabet turns a real observation into a failed analysis, while a wider one only means a letter with no word of its own, which the view already prints as itself. Version 3 → 4 because the DDL is part of the shape the version names and `open_analysis` refuses a database it cannot vouch for; the cost is one re-parse of the structure layer, and no database of version 3 exists outside this machine, since v0.3.0 is not pushed. |
+| The two stale lines in the READMEs were fixed with the release | Both timeline blocks drew a 91-character rule over rows from a 110-column run, which draws 108; and the stale-analysis example named a HEAD sha (`a80420c9`) that no documented sequence produces. The rule now matches its rows, and the sha is `cd173ca5`, the one the release's own "add a health check" commit makes — the same commit the separation demo uses, so the two blocks agree. |
 
 ## Traps already found
 
@@ -203,12 +409,109 @@ now says the limit is on language, not on when to start.
     suite; it was found by asking the user's matrix "which of these is covered"
     and measuring instead of assuming. The question to ask of a fixture is not
     what it covers but **what could be wrong and still pass**.
+13. **`ast.dump` is not portable between interpreters.** 3.11 prints every field
+    (`decorator_list=[]`, `posonlyargs=[]`, `type_ignores=[]`); 3.13 omits the
+    empty ones. The same source therefore has two different dumps, so a
+    fingerprint built on `ast.dump` would mark every definition in a repository
+    as modified the first time it was analyzed by another Python. The tool
+    renders the structure itself, omitting empty fields, which was measured
+    byte-identical on 3.11.16 and 3.13.5 across a 42-sample corpus. Two smaller
+    traps came out of the same probe: `ast.parse` raises **`RecursionError`**,
+    not `SyntaxError`, for a 5,000-long attribute chain (so the failure set is
+    not just `SyntaxError`), and an invalid escape sequence is a
+    `DeprecationWarning` on 3.11 but a **`SyntaxWarning`** on 3.13 — which prints
+    by default, so a scan over a large repository would flood stderr unless
+    parsing suppresses warnings.
+14. **Running a probe from the shared temp directory puts that directory on
+    `sys.path`.** A throwaway script in `%TEMP%` died with
+    `AttributeError: module 'inspect' has no attribute 'get_annotations'`,
+    because another tool had left an `inspect.py` there that shadowed the
+    standard library — and the stray file printed its own output on import, so
+    the failure came with a page of somebody else's diagnostics above it. Probe
+    scripts go in a directory of their own, never in a directory other tools
+    also write to.
+15. **A dead `git cat-file` is met at the write, not at the read.** A test that
+    killed the process expected the *read* to fail; what fails first is the
+    `stdin.write` of the next request, with `BrokenPipeError` — and the `close()`
+    that follows raises `OSError: [Errno 22]` on Windows, because there is no
+    longer a pipe to close. Both are handled and both are pinned by a test, but a
+    reader written without them reports a broken pipe instead of "git stopped
+    answering". Two more protocol facts that cost time to learn: the answer to a
+    missing object is the request echoed back with `missing`, and the process
+    carries on afterwards; and an empty blob still ends with the separator
+    newline, so a reader that reads `size` bytes and stops loses its place on the
+    very next request.
+16. **`write_commits` no longer means "append these".** It means "the stored
+    history is exactly these commits": the ones git no longer has are removed,
+    with their file versions and definitions. A test written the old way — write
+    one commit, then write another — deletes the first and everything hanging off
+    it, and the mistake surfaces as a foreign-key error on the *next* write
+    rather than at the line that did it. That is how the first version of the new
+    tests failed, and it is worth knowing before writing the pass.
+17. **An anchor can appear inside the data you are inserting next to.** Inserting
+    a fixture at the first `if __name__ == "__main__":` in `sample_repo.py` put it
+    inside `APP_BEFORE`, which is itself a Python module and contains that line —
+    the result parsed cleanly and was nonsense, and the import that should have
+    failed with a syntax error failed with "cannot import name" instead. Anchor on
+    something unique to the place, and when the file is tracked and otherwise
+    unchanged, `git checkout -- <file>` is the cheap way back.
+18. **An edit anchored on a `def` line eats the docstring under it.** Inserting a
+    function *above* another one by matching `def name(...):` plus the docstring's
+    first line, and replacing with only the new code plus `def name(...):`,
+    deletes that first line and leaves the docstring's body dangling — a syntax
+    error, and the third time this exact slip has happened in this project. When
+    inserting before a function, anchor on the blank lines *above* it, or include
+    the whole docstring in both the old and the new text. `ast.parse` the file
+    straight afterwards; it takes a second and catches it every time.
+19. **`git merge -X ours` does not resolve a modify/delete conflict.** A fixture
+    that deletes a file on one branch and edits it on another needs the file to
+    survive the merge, and `-X ours` — the *option* of the default strategy —
+    exits 1 with the conflict still there, because it only settles conflicts
+    inside a file both sides kept. `-s ours` — the *strategy* — is what keeps our
+    whole tree, and it is what the fixture uses. The shape is worth having: it is
+    the only way a repository produces a file that is absent from one commit and
+    present again in the same life, which is the case `NOT_IN_TREE` exists for.
+20. **A derivation is worth printing before it is worth asserting.** Two bugs
+    survived a careful reading of `definition_history.py` and died in one run of
+    a throwaway script that printed the histories of the new fixtures: blind
+    spots were being collected in the pending gap but never added to the file's
+    `versions`, on both the parse-failure path and the mid-life-deletion path.
+    Both would have shown up as failing assertions eventually — as wrong
+    *expectations* in the test file, which is the expensive way to find them.
+    Write the fixtures first, print what comes out, then write the assertions.
+21. **`min_width` does not stop Rich squeezing a column below it.** The structure
+    table's `CHANGE` column came out as `creat` and the decorator column as
+    `@staticme…` at 80 columns: the columns' minimums added up to more than the
+    console, and Rich takes the shortfall out of the last column rather than
+    refusing to render. The fix is arithmetic, not a Rich option — every width
+    plus Rich's own padding must add up to *less* than the console, with slack to
+    spare. Measured at 80, 100 and 120 columns before it was believed. The other
+    half of the same trap: `shorten()` on a column whose real width is only known
+    at render time truncates values that would have fitted, so it is applied to
+    the one column whose width is computed here and to no other.
+22. **A probe written to the shared temp directory breaks the same way every
+    time.** Trap 14, hit again in Unit 8: a throwaway script at
+    ``%TEMP%/caprobe8.py`` died with ``module 'inspect' has no attribute
+    'get_annotations'`` because another tool's ``inspect.py`` is still sitting in
+    that directory, and the stray file printed a page of somebody else's
+    diagnostics above the traceback. The rule is not "remember trap 14", it is
+    "probe scripts go in a directory of their own" — ``mkdir`` first, then write.
+23. **A benchmark's own name can collide with the tool's.** ``build_history`` was
+    the benchmark's fast-import generator and also the structure view's block
+    builder; the import silently won and the failure came out as a missing
+    argument three call sites away. Import the tool's names with an alias when
+    the benchmark has a word of its own for the same thing.
 
 ## Environment notes
 
 - **Pushing works over SSH on port 443**, through a repository deploy key and the
   host alias `codearchaeology`. `github.com:443` is blocked and the `ghfast.top`
   proxy that serves fetches does not support pushes.
+- **`uv run --python 3.11` rebuilds `.venv` for that interpreter.** Running a
+  cross-version probe therefore *removes* the project's 3.13 environment and
+  leaves a 3.11 one behind, until the next plain `uv run` puts it back. Nothing
+  is lost and the reinstall takes under a second, but a session that checks
+  `sys.version` inside `.venv` afterwards will be surprised by it.
 - **Git Bash's own `ssh` does not read `~/.ssh/config`** on this machine: it
   resolves the home directory through `getpwuid`, there is no `/etc/passwd`, and
   it ignores `HOME`. Git is therefore pointed at the native OpenSSH binary with
@@ -228,31 +531,46 @@ now says the limit is on language, not on when to start.
    makes possible: which files tend to change together. It has not been designed
    yet, and the percentage has to be pinned down first — of a file's commits, of
    the pair's, or of everything — because the three give different numbers.
-2. **The English README's `timeline` block has a stale rule line.** Its data rows
-   are a faithful width-110 run, but the rule above them is 91 characters where
-   a run at that width draws 108. Every other line of every other block in both
-   READMEs reproduces from a real run, so this is one line, not a habit. Left
-   alone pending the user's word, because it is a file change.
+2. **v0.3.0 is written but not pushed.** The version, both READMEs, the roadmap
+   row and the design doc are in place, and the suite is green on both
+   interpreters. The push and the tag are the user's, exactly as they were for
+   v0.2.0 — see "How to verify" below for the commands.
 3. **`files` and `hotspots` show the same ranking in two shapes**, and now emit
    byte-identical JSON as well. The user asked for both, so both exist. If one of
    them should become something else — an inventory including deleted files, say
    — that is their call.
-4. **The benchmark is not covered by anything.** Nothing runs
-   `benchmarks/benchmark.py`, so a rename in the modules it imports breaks it
-   silently until someone tries to use it. That is a deliberate trade — a test
-   that runs a benchmark muddies what the suite is for — but it is a trade, not
-   an oversight, and a smoke run at a few hundred commits would close it cheaply
-   if it ever bites.
+4. **Two hand-run tools are covered by nothing.** Nothing runs
+   `benchmarks/benchmark.py`, and nothing replays the READMEs' console blocks, so
+   a rename in the modules either one imports breaks it silently until someone
+   uses it. That is a deliberate trade — a test that runs a benchmark or a
+   README checker muddies what the suite is for — but it is a trade, not an
+   oversight, and a smoke run at a few hundred commits would close the benchmark
+   half of it cheaply. The README half is the more valuable of the two now that
+   the blocks are a documented contract: the checker described in the decisions
+   table is the thing to rebuild, and it is a unit's worth of work if the user
+   wants it kept.
 5. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
+6. **The reuse path re-reads the stored definitions one version at a time.**
+   Measured in Unit 8: a second pass over a hundred thousand commits costs 374s
+   against 405s for the first, because the five hundred thousand small queries
+   replace the parse and the walk almost exactly. Reading them in one query is
+   the obvious next measurement, and it is a change to the pass rather than to
+   the model, so it was left out of the unit that measured it.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 193 tests
+$ uv run pytest                 # 348 tests, on 3.13
+$ uv run --python 3.11 pytest   # the same suite, on the declared floor
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```
 
 A database written by an older schema version rebuilds itself on the next
 `analyze`; there is nothing to clean up by hand.
+
+A release is three things beyond the code: the version in the four places the
+suite compares, the roadmap row, and both READMEs. The READMEs' console blocks
+are replayed against the fixtures rather than trusted — 46 of them at v0.3.0 —
+and the way to do that is in the decisions table above.

@@ -1,29 +1,41 @@
-"""Measure the four operations the tool is built around, at whatever scale.
+"""Measure the operations the tool is built around, and the AST pass's phases.
 
 Run it by hand, not in CI::
 
-    uv run python benchmarks/benchmark.py --commits 20000
-    uv run python benchmarks/benchmark.py --commits 20000 100000 200000
+    uv run python benchmarks/benchmark.py --commits 1000 10000
+    uv run python benchmarks/benchmark.py --commits 100000 --files 200
 
 It answers one question — where does the time go as a repository grows — and it
 is deliberately not a test. There is no pass or fail here: a wall-clock bound
 would fail on a busy CI machine and teach people to re-run it, and the number
 that matters is the shape of the curve, not any single value.
 
-**What it measures, and what it does not.** The history is generated, so its
-shape is fixed and stated: files are created and then edited in place, five per
-commit, one line changed each time. A real repository has larger diffs, more
-renames and a longer tail of file sizes, and all three move these numbers. Read
-the curve, not the absolute values.
+**The shape of the generated history**, because every number here depends on it.
+Files are created and then edited in place, ``--touched`` per commit, and each
+edit flips one function's operator, so a version has one or two modified
+definitions and the rest unchanged. One file in ten is written so that it cannot
+be parsed: that is what gives the pass a failure rate to report instead of a
+sentence claiming everything worked. Read the curve, not the absolute values.
 
-**Why four operations and not one.** ``hotspots`` and ``file history`` both need
-every file's life, and a life can only be rebuilt by walking the whole commit
-graph, so the two are expected to cost about the same as each other and rather
-more than the timeline. If that ever stops being true, something changed that
-nobody decided.
+**The AST pass is measured in phases**, because a single total would hide the
+interesting part. Reading, parsing, walking the tree, comparing and inserting are
+five different things, and only one of them is the parser. ``parse`` is measured
+by wrapping ``ast.parse`` for the duration of the run, ``extract`` is what
+``definitions_of`` costs on top of it, and ``read``, ``compare`` and ``insert``
+are measured by wrapping the pass's own calls. **Every wrapper counts its calls**
+and the report prints the count beside the time: a wrapper that stopped being
+called would otherwise report a phase that got infinitely fast.
+
+**What the AST layer costs to store** is measured rather than predicted: the row
+counts, the database size before and after the pass, and the same rows counted
+the way a change log would have stored them. A change log holds only what
+changed; a snapshot holds every definition of every version, which is why the two
+counts differ and why the difference depends on how much churn a history has
+rather than on a constant.
 """
 
 import argparse
+import ast as ast_module
 import shutil
 import subprocess
 import sys
@@ -31,18 +43,31 @@ import tempfile
 import time
 from pathlib import Path
 
+from codearchaeology import ast_pass as ast_pass_module
+from codearchaeology import objects as objects_module
 from codearchaeology.analysis import analyze
+from codearchaeology.ast_pass import run_ast_pass
+from codearchaeology.definition_history import load_histories
+from codearchaeology.definitions import interpreter_version
 from codearchaeology.file import build_block, find_files
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
 from codearchaeology.relationships import load_commits_touching
 from codearchaeology.storage import connect
+from codearchaeology.structure import (
+    build_history as build_history_block,
+    build_version,
+    definitions_in,
+    select_version,
+)
 from codearchaeology.timeline import build_table, load_timeline
 
 DEFAULT_FILES = 200
 DEFAULT_TOUCHED = 5
 DEFAULT_REPEAT = 3
-LINES_PER_FILE = 22
+FUNCTIONS_PER_FILE = 3
+# One file in this many is written so that it cannot be parsed.
+BROKEN_EVERY = 10
 
 # How many commits to buffer before handing them to git. One write per commit
 # would spend more time in the pipe than in git.
@@ -66,9 +91,27 @@ def commit_count(repo: Path) -> int:
 
 
 def _file_body(index: int, edit: int) -> bytes:
-    """One revision of one file: a fixed size, changed by one line."""
+    """One revision of one file: valid Python, one function changed per edit.
+
+    Valid Python matters for the half of this benchmark that measures the AST
+    layer. A file that does not parse gives the pass nothing to walk, nothing to
+    compare and nothing to insert, so a fixture of unparseable files would report
+    a fast pass and prove nothing.
+    """
+    if index % BROKEN_EVERY == 0:
+        return (
+            f"# module {index}\ndef broken_{index}(value)\n    return {edit}\n".encode()
+        )
+
     body = f"# module {index}\n"
-    body += "".join(f"line {number}\n" for number in range(LINES_PER_FILE - 2))
+    for number in range(FUNCTIONS_PER_FILE):
+        operator = "-" if number == edit % FUNCTIONS_PER_FILE else "+"
+        body += f"def function_{number}(value):\n"
+        body += f"    return value {operator} {number}\n\n\n"
+
+    body += "class Holder:\n"
+    body += "    def get(self):\n        return 0\n\n"
+    body += "    def put(self, value):\n        return value\n\n\n"
     body += f"# edit {edit}\n"
     return body.encode()
 
@@ -154,8 +197,44 @@ def best_of(repeat: int, operation):
     return min(times), result
 
 
+class Phases:
+    """Times the AST pass's phases by wrapping the names it calls them through.
+
+    The pass imports what it uses by name, so replacing the name in its module is
+    enough to time that call without changing a line of the pass. Each wrapper
+    counts its calls as well as its time, and the report prints the count: a
+    wrapper that stopped being called would otherwise look like a phase that got
+    faster, which is the one failure a benchmark must not have.
+    """
+
+    def __init__(self) -> None:
+        self.times: dict[str, float] = {}
+        self.calls: dict[str, int] = {}
+        self._wrapped: list[tuple[object, str, object]] = []
+
+    def wrap(self, owner, name: str, phase: str) -> None:
+        original = getattr(owner, name)
+
+        def timed(*arguments, **keywords):
+            start = time.perf_counter()
+            try:
+                return original(*arguments, **keywords)
+            finally:
+                spent = time.perf_counter() - start
+                self.times[phase] = self.times.get(phase, 0.0) + spent
+                self.calls[phase] = self.calls.get(phase, 0) + 1
+
+        setattr(owner, name, timed)
+        self._wrapped.append((owner, name, original))
+
+    def restore(self) -> None:
+        for owner, name, original in self._wrapped:
+            setattr(owner, name, original)
+        self._wrapped.clear()
+
+
 def measure(repo: Path, database: Path, repeat: int) -> dict[str, float]:
-    """Time each operation once the database exists."""
+    """Time the git-side operations once the database exists."""
     timings: dict[str, float] = {}
 
     timings["analyze"], _ = best_of(repeat, lambda: analyze(repo, database))
@@ -194,16 +273,107 @@ def measure(repo: Path, database: Path, repeat: int) -> dict[str, float]:
     return timings
 
 
-def sizes(repo: Path, database: Path) -> tuple[int, int]:
+def measure_ast(repo: Path, database: Path, repeat: int) -> dict:
+    """Run the pass with its phases timed, then time the queries over its rows.
+
+    The pass is run once, on a database with no AST rows in it: a second run
+    reuses what the first one stored and would measure the cache rather than the
+    work. The re-run is timed separately, because "what does it cost when nothing
+    changed" is a question of its own.
+    """
+    phases = Phases()
+    # ast.parse is what definitions_of calls, so wrapping the standard library's
+    # name for the length of the run is what splits the parser from the walk.
+    phases.wrap(ast_module, "parse", "parse")
+    phases.wrap(ast_pass_module, "definitions_of", "definitions")
+    phases.wrap(ast_pass_module, "_change_types", "compare")
+    phases.wrap(ast_pass_module, "write_ast_batch", "insert")
+    phases.wrap(objects_module.ObjectReader, "read", "read")
+
+    try:
+        start = time.perf_counter()
+        result = run_ast_pass(repo, database)
+        total = time.perf_counter() - start
+    finally:
+        phases.restore()
+
+    timings = {
+        "read": phases.times.get("read", 0.0),
+        "parse": phases.times.get("parse", 0.0),
+        # What the walk over the tree costs, over and above the parse it does
+        # first: definitions_of includes ast.parse, so this is the difference.
+        "extract": phases.times.get("definitions", 0.0)
+        - phases.times.get("parse", 0.0),
+        "compare": phases.times.get("compare", 0.0),
+        "insert": phases.times.get("insert", 0.0),
+        "total": total,
+        "again": 0.0,
+    }
+    calls = dict(phases.calls)
+
+    timings["again"], again = best_of(1, lambda: run_ast_pass(repo, database))
+
     connection = connect(database)
     try:
-        commits = connection.execute("SELECT COUNT(*) AS n FROM commits").fetchone()["n"]
-        changes = connection.execute(
-            "SELECT COUNT(*) AS n FROM commit_files"
-        ).fetchone()["n"]
+        target = connection.execute(
+            "SELECT path FROM file_versions GROUP BY path"
+            " ORDER BY COUNT(*) DESC LIMIT 1"
+        ).fetchone()["path"]
     finally:
         connection.close()
-    return commits, changes
+
+    def structure():
+        histories = load_histories(repo, database, target)
+        history, version = select_version(histories)
+        return build_version(history, version) + str(len(definitions_in(version)))
+
+    timings["structure"], _ = best_of(repeat, structure)
+
+    def structure_history():
+        return build_history_block(load_histories(repo, database, target)[0])
+
+    timings["structure --history"], _ = best_of(repeat, structure_history)
+
+    return {"timings": timings, "calls": calls, "result": result, "again": again}
+
+
+def shape(database: Path, result, db_after_analyze: int, again) -> dict:
+    """What the AST layer stored, and what it cost to store it."""
+    connection = connect(database)
+    try:
+        counts = {
+            table: connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()[
+                "n"
+            ]
+            for table in (
+                "commits",
+                "commit_files",
+                "file_versions",
+                "definition_versions",
+            )
+        }
+        counts["changed"] = connection.execute(
+            "SELECT COUNT(*) AS n FROM definition_versions"
+            " WHERE change_type != 'unchanged'"
+        ).fetchone()["n"]
+        interpreters = connection.execute(
+            "SELECT DISTINCT parsed_at_version FROM file_versions"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    return {
+        **counts,
+        "interpreters": [row["parsed_at_version"] for row in interpreters],
+        "db_analyze_mb": db_after_analyze / 1e6,
+        "db_mb": database.stat().st_size / 1e6,
+        "parsed": result.parsed,
+        # From the second run, where every version is the one already worked
+        # out: the first run reuses nothing, so its own count says nothing.
+        "reused": again.reused,
+        "failed": result.failed,
+        "skipped": result.skipped,
+    }
 
 
 def run_scale(commits: int, files: int, touched: int, repeat: int, workdir: Path):
@@ -221,17 +391,26 @@ def run_scale(commits: int, files: int, touched: int, repeat: int, workdir: Path
         building = time.perf_counter() - start
         reused = False
 
+    # A database left over from an earlier run would make the pass look free:
+    # every version would be reused and no parsing would happen at all.
+    if database.exists():
+        database.unlink()
+
     timings = measure(repo, database, repeat)
-    stored_commits, stored_changes = sizes(repo, database)
+    db_after_analyze = database.stat().st_size
+    ast = measure_ast(repo, database, repeat)
+    stored = shape(database, ast["result"], db_after_analyze, ast["again"])
 
     return {
-        "commits": stored_commits,
-        "changes": stored_changes,
+        "commits": stored["commits"],
+        "changes": stored["commit_files"],
         "build": building,
         "reused": reused,
         "repo_mb": _tree_size(repo) / 1e6,
-        "db_mb": database.stat().st_size / 1e6,
+        "stored": stored,
         "timings": timings,
+        "ast": ast["timings"],
+        "calls": ast["calls"],
     }
 
 
@@ -246,32 +425,132 @@ def _tree_size(repo: Path) -> int:
     return total
 
 
+def _table(headers: list[str], rows: list[list[str]]) -> None:
+    widths = [
+        max(len(headers[column]), *(len(row[column]) for row in rows))
+        for column in range(len(headers))
+    ]
+    print(
+        "  ".join(
+            headers[column].rjust(widths[column]) for column in range(len(headers))
+        )
+    )
+    for row in rows:
+        print(
+            "  ".join(row[column].rjust(widths[column]) for column in range(len(headers)))
+        )
+
+
 def report(results: list[dict]) -> None:
-    operations = list(results[0]["timings"])
-    width = max(len(name) for name in operations) + 1
+    print()
+    print("stored — what the history became")
+    _table(
+        [
+            "commits",
+            "changes",
+            "versions",
+            "definitions",
+            "changed",
+            "ratio",
+            "db git",
+            "db +ast",
+        ],
+        [
+            [
+                str(row["commits"]),
+                str(row["changes"]),
+                str(row["stored"]["file_versions"]),
+                str(row["stored"]["definition_versions"]),
+                str(row["stored"]["changed"]),
+                _ratio(row["stored"]),
+                f"{row['stored']['db_analyze_mb']:.1f}M",
+                f"{row['stored']['db_mb']:.1f}M",
+            ]
+            for row in results
+        ],
+    )
+    print("  changed  the rows a change log would have stored, instead of all of them")
+    print("  ratio    definitions stored per row a change log would have kept")
 
     print()
-    print(
-        f"{'commits':>9} {'changes':>9} {'dir':>7} {'db':>7}  "
-        + "".join(f"{name:>{width}}" for name in operations)
+    print("parsed — what the pass made of them")
+    _table(
+        ["versions", "parsed", "failed", "skipped", "reused", "failure rate"],
+        [
+            [
+                str(row["stored"]["file_versions"]),
+                str(row["stored"]["parsed"]),
+                str(row["stored"]["failed"]),
+                str(row["stored"]["skipped"]),
+                str(row["stored"]["reused"]),
+                _rate(row["stored"]),
+            ]
+            for row in results
+        ],
     )
+
+    print()
+    print("AST pass — seconds")
+    operations = list(results[0]["ast"])
+    width = max(len(name) for name in operations) + 1
+    print(f"{'commits':>9} " + "".join(f"{name:>{width}}" for name in operations))
     for row in results:
         print(
-            f"{row['commits']:>9} {row['changes']:>9} "
-            f"{row['repo_mb']:>6.1f}M {row['db_mb']:>6.1f}M  "
+            f"{row['commits']:>9} "
+            + "".join(f"{row['ast'][name]:>{width - 1}.2f}s" for name in operations)
+        )
+
+    print()
+    print("AST pass — how many times each phase ran")
+    calls = list(results[0]["calls"])
+    width = max(len(name) for name in calls) + 1
+    print(f"{'commits':>9} " + "".join(f"{name:>{width}}" for name in calls))
+    for row in results:
+        print(
+            f"{row['commits']:>9} "
+            + "".join(f"{row['calls'][name]:>{width}d}" for name in calls)
+        )
+    print("  read      git cat-file --batch, one call per file version")
+    print("  parse     ast.parse, wrapped for the length of the run")
+    print("  extract   definitions_of on top of that parse: the walk over the tree")
+    print("  compare   the pass's own comparison against the previous version")
+    print("  insert    write_ast_batch, one call per batch of 500 versions")
+    print("  total     the whole pass, wall clock")
+    print("  again     a second pass over the same rows: nothing parsed, all reused")
+    print("  The counts are the guard against a wrapper that stopped being called:")
+    print("  a phase of 0.00s and 0 calls is a broken measurement, not a fast one.")
+
+    print()
+    print("reads — seconds")
+    operations = list(results[0]["timings"])
+    width = max(len(name) for name in operations) + 1
+    print(f"{'commits':>9} " + "".join(f"{name:>{width}}" for name in operations))
+    for row in results:
+        print(
+            f"{row['commits']:>9} "
             + "".join(f"{row['timings'][name]:>{width - 1}.2f}s" for name in operations)
         )
 
     print()
-    print("dir   is the whole repository directory, .git included.")
-    print("db    is the analysis database.")
+    print("dir    is the whole repository directory, .git included.")
+    print("db git is the analysis database after analyze; db +ast adds the AST layer.")
     print("Times are the fastest of several runs, not an average: every source of")
-    print("noise can only make a run slower than the work itself.")
-    print()
-    print("The history is generated, so its shape is fixed: files are created and")
-    print("then edited in place, one line at a time. Real repositories have larger")
-    print("diffs, more renames and a longer tail of file sizes, and all three move")
-    print("these numbers. Read the curve, not the absolute values.")
+    print("noise can only make a run slower than the work itself. The AST pass is the")
+    print("exception: it runs once, because a second run would measure the cache.")
+    print(f"parsed_at_version on every row is {interpreter_version()}.")
+
+
+def _ratio(stored: dict) -> str:
+    if not stored["changed"]:
+        return "-"
+    return f"{stored['definition_versions'] / stored['changed']:.2f}x"
+
+
+def _rate(stored: dict) -> str:
+    versions = stored["file_versions"]
+    if not versions:
+        return "-"
+    return f"{100 * stored['failed'] / versions:.1f}%"
 
 
 def main(argv=None) -> int:
@@ -305,7 +584,12 @@ def main(argv=None) -> int:
             commits, arguments.files, arguments.touched, arguments.repeat, workdir
         )
         state = "reused" if row["reused"] else f"built in {row['build']:.1f}s"
-        print(f"  {state}, {row['changes']} file changes", flush=True)
+        print(
+            f"  {state}, {row['changes']} file changes,"
+            f" {row['stored']['file_versions']} versions,"
+            f" {row['stored']['definition_versions']} definitions",
+            flush=True,
+        )
         results.append(row)
 
     report(results)
