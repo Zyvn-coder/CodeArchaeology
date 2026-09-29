@@ -417,8 +417,9 @@ now says the limit is on language, not on when to start.
     renders the structure itself, omitting empty fields, which was measured
     byte-identical on 3.11.16 and 3.13.5 across a 42-sample corpus. Two smaller
     traps came out of the same probe: `ast.parse` raises **`RecursionError`**,
-    not `SyntaxError`, for a 5,000-long attribute chain (so the failure set is
-    not just `SyntaxError`), and an invalid escape sequence is a
+    not `SyntaxError`, for a deeply nested attribute chain (so the failure set is
+    not just `SyntaxError`; how deep is another matter, see trap 24), and an
+    invalid escape sequence is a
     `DeprecationWarning` on 3.11 but a **`SyntaxWarning`** on 3.13 — which prints
     by default, so a scan over a large repository would flood stderr unless
     parsing suppresses warnings.
@@ -501,6 +502,19 @@ now says the limit is on language, not on when to start.
     builder; the import silently won and the failure came out as a missing
     argument three call sites away. Import the tool's names with an alias when
     the benchmark has a word of its own for the same thing.
+24. **How deep is too deep belongs to the machine, not to the source.** A test
+    asserting that a 5,000-long attribute chain exhausts the parser passed on
+    Windows and on Linux 3.11, and failed the first time CI ran it on Linux
+    3.13: the runner read the whole thing without complaint. The limit is the C
+    stack — measured on 3.13, Windows gives up at the same 2,995 nested
+    attributes at a recursion limit of 100 and of 1,000, so
+    ``sys.setrecursionlimit`` does not move it — which makes the depth a
+    property of the interpreter build and its stack, not of the source. The test
+    now deepens the source until the parser gives up (5,000, doubling to
+    320,000) and skips rather than fails on a machine that reads every depth.
+    The general shape is worth remembering: **a test whose input has to *exceed*
+    an implementation limit is testing the platform**, and a second platform is
+    where that shows.
 
 ## Environment notes
 

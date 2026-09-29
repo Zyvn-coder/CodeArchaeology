@@ -24,10 +24,14 @@ was hit for real while the design was frozen:
   measured byte-identical on 3.11.16 and 3.13.5.
 
 Nothing here recurses. The parser refuses a tree deeper than it can build — a
-5,000-long attribute chain raises ``RecursionError``, not ``SyntaxError`` — so
-whatever tree it did accept is already at the edge of what the interpreter can
-walk, and a recursive walk of our own would fail on trees the parser had just
-accepted.
+deeply nested attribute chain raises ``RecursionError``, not ``SyntaxError`` —
+so whatever tree it did accept is already at the edge of what the interpreter
+can walk, and a recursive walk of our own would fail on trees the parser had
+just accepted. Where that edge is belongs to the machine rather than to the
+source: measured, the Windows interpreter stops at about 3,000 nested
+attributes and the Ubuntu runner reads 5,000 without complaint, because the
+limit is the C stack and not ``sys.setrecursionlimit`` (measured: the same
+3,000 at a limit of 100 and of 1,000).
 """
 
 import ast

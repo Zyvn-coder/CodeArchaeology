@@ -286,10 +286,27 @@ def test_python_2_syntax_is_recorded() -> None:
 
 
 def test_a_source_too_deep_for_the_parser_is_recorded() -> None:
-    """Not a SyntaxError, which is why the failure set is more than one type."""
-    failure = _failure(b"x = a" + b".a" * 5000 + b"\n")
-    assert failure.reason.startswith("RecursionError: ")
-    assert failure.lineno is None
+    """Not a SyntaxError, which is why the failure set is more than one type.
+
+    How deep is too deep belongs to the machine rather than to the source. The
+    parser stops when the C stack runs out, and ``sys.setrecursionlimit`` does
+    not move that line — measured on 3.13: the same 2,995 nested attributes at a
+    limit of 100 and of 1,000. Measured across the two CI runners: Windows gives
+    up below 5,000, Ubuntu reads 5,000 without complaint. So the source is
+    deepened until the parser gives up instead of asserting a depth that holds
+    on one platform only, and a machine whose stack is large enough to read
+    every depth tried is skipped rather than failed.
+    """
+    depth = 5_000
+    while depth <= 320_000:
+        failure = definitions_of(b"x = a" + b".a" * depth + b"\n")
+        if isinstance(failure, ParseFailure):
+            assert failure.reason.startswith("RecursionError: ")
+            assert failure.lineno is None
+            return
+        depth *= 2
+
+    pytest.skip(f"this machine's parser read {depth // 2} nested attributes")
 
 
 def test_indentation_beyond_the_limit_is_recorded() -> None:
