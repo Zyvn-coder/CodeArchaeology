@@ -565,8 +565,10 @@ now says the limit is on language, not on when to start.
    the blocks are a documented contract: the checker described in the decisions
    table is the thing to rebuild, and it is a unit's worth of work if the user
    wants it kept.
-4. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
-   databases in the local cache that point at deleted temp directories.
+4. Optional and unasked: a GitHub Release for v0.2.0, whose tag carries notes but
+   has no release page (v0.3.0 has one); `.gitattributes` to pin LF; clearing the
+   three junk databases in the local cache that point at deleted temp
+   directories.
 5. **The reuse path re-reads the stored definitions one version at a time.**
    Measured in Unit 8: a second pass over a hundred thousand commits costs 374s
    against 405s for the first, because the five hundred thousand small queries
