@@ -15,12 +15,18 @@ below is v0.3.0.**
 
 ## Where the project stands
 
-**v0.3.0 is written and documented.** Unit 9 was the release: both READMEs now
-describe all eight commands, the structure layer's five rules are stated in them,
-the roadmap row says Done, and the version is 0.3.0 in the four places the
-existing test compares. Every console block in both files was replayed against
-the fixtures at release time and matched, line for line. What has not happened is
-the push and the tag — those are the user's to run, as they were for v0.2.
+**v0.3.0 is released.** Unit 9 was the release: both READMEs describe all eight
+commands, the structure layer's five rules are stated in them, the roadmap row
+says Done, and the version is 0.3.0 in the four places the existing test
+compares. Every console block in both files was replayed against the fixtures at
+release time and matched, line for line. `main` is pushed, `v0.3.0` is tagged, a
+GitHub Release carries the notes, and CI is green on all four jobs.
+
+The tag points at `a2a4565` rather than at the release commit `ba62bc5`, and it
+moved once to get there: the first push failed on the Ubuntu 3.13 runner (trap
+24), and a release tag whose own CI is red is worse than a tag that moved five
+minutes after it was created. The failed runs are still in the Actions log, so
+the sequence — push, fail, fix, re-tag — is visible rather than erased.
 
 **v0.2.0 is released.** The user ran the acceptance checklist over 22 items; all
 of them pass, and the last three — the roadmap status, the README status line and
@@ -545,15 +551,11 @@ now says the limit is on language, not on when to start.
    makes possible: which files tend to change together. It has not been designed
    yet, and the percentage has to be pinned down first — of a file's commits, of
    the pair's, or of everything — because the three give different numbers.
-2. **v0.3.0 is written but not pushed.** The version, both READMEs, the roadmap
-   row and the design doc are in place, and the suite is green on both
-   interpreters. The push and the tag are the user's, exactly as they were for
-   v0.2.0 — see "How to verify" below for the commands.
-3. **`files` and `hotspots` show the same ranking in two shapes**, and now emit
+2. **`files` and `hotspots` show the same ranking in two shapes**, and now emit
    byte-identical JSON as well. The user asked for both, so both exist. If one of
    them should become something else — an inventory including deleted files, say
    — that is their call.
-4. **Two hand-run tools are covered by nothing.** Nothing runs
+3. **Two hand-run tools are covered by nothing.** Nothing runs
    `benchmarks/benchmark.py`, and nothing replays the READMEs' console blocks, so
    a rename in the modules either one imports breaks it silently until someone
    uses it. That is a deliberate trade — a test that runs a benchmark or a
@@ -563,9 +565,9 @@ now says the limit is on language, not on when to start.
    the blocks are a documented contract: the checker described in the decisions
    table is the thing to rebuild, and it is a unit's worth of work if the user
    wants it kept.
-5. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
+4. Optional and unasked: `.gitattributes` to pin LF; clearing the three junk
    databases in the local cache that point at deleted temp directories.
-6. **The reuse path re-reads the stored definitions one version at a time.**
+5. **The reuse path re-reads the stored definitions one version at a time.**
    Measured in Unit 8: a second pass over a hundred thousand commits costs 374s
    against 405s for the first, because the five hundred thousand small queries
    replace the parse and the walk almost exactly. Reading them in one query is
