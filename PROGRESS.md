@@ -19,8 +19,9 @@ has no JSON form — is marked rather than filled). **`CHANGELOG.md` exists as o
 the same unit**, the fifth place the version is written down; its 0.3.1 section is
 dated 2026-10-01. The pass no longer writes a row it already stored; the AST reuse
 path reads its stored definitions in one query and records which analyzer produced
-them. **The commit is made; the tag and the release page are not**, and they wait
-on a green CI run on that commit.**
+them. **The release commit is pushed and its Windows jobs are red**: the README
+checker's first Windows run found the tool's output encoding (trap 35), the fix is
+in `cli.py`, and the tag waits on a green run on the fixed tree.**
 
 ## Where the project stands
 
@@ -652,6 +653,7 @@ now says the limit is on language, not on when to start.
 | The READMEs' blocks are replayed against the fixtures, by a script that is not kept | Every console block in both files — 46 of them — was replayed at release time and compared with the command's real output, line for line, which is how the two stale lines below were found. The script lives outside the repository on purpose: it is a release step, not a gate, and it depends on the fixture module and on Windows path handling. Two things bit while writing it, and are worth knowing before writing it again: stderr has to be merged *before* stdout (a note is printed above the block it warns about), and a database path must be replaced before the repository path, because the first begins with the second. |
 | `commit_files.change_type` carries a `CHECK`, and the schema version moved with it | The column held git's letter with nothing stopping a word being written into it — the last place where a conclusion could have been stored beside the observation it came from. The constraint allows git's nine documented letters rather than the subset this command line can produce, because a constraint narrower than git's alphabet turns a real observation into a failed analysis, while a wider one only means a letter with no word of its own, which the view already prints as itself. Version 3 → 4 because the DDL is part of the shape the version names and `open_analysis` refuses a database it cannot vouch for; the cost is one re-parse of the structure layer, and no database of version 3 exists outside this machine, since v0.3.0 is not pushed. |
 | The two stale lines in the READMEs were fixed with the release | Both timeline blocks drew a 91-character rule over rows from a 110-column run, which draws 108; and the stale-analysis example named a HEAD sha (`a80420c9`) that no documented sequence produces. The rule now matches its rows, and the sha is `cd173ca5`, the one the release's own "add a health check" commit makes — the same commit the separation demo uses, so the two blocks agree. |
+| The tool writes UTF-8 when its output is not a terminal | Trap 35's fix, and the reason is the fact that produced it: a pipe carries the machine's ANSI code page, and this tool's output is not written in it. A console is left alone — Python's console layer is already UTF-8, and rich knows how to draw on the consoles that are not — so the change reaches exactly the streams that were broken, and a redirect or a pipe now gets the output the READMEs document instead of an ASCII-degraded version that dies on the first non-ASCII character. `stream.isatty()` decides, `reconfigure(encoding="utf-8")` does it, and a stream that cannot be reconfigured keeps the encoding it has rather than refusing to run. |
 | The two design freezes keep their `v0.4-` names | **The user's call**, after the mismatch was pointed out: `docs/v0.4-cochange-design.md` and `docs/v0.4-files-semantics-design.md` describe work that shipped in v0.3.1, and their names say v0.4. Seven references point at them (one of them a test that opens the file by path), so renaming is cheap but not free; the user chose to leave them. The names are a known inaccuracy, not a drift nobody noticed. |
 | A CHANGELOG is kept, and it is the fifth place the version is written down | **The user asked for one**, after the freeze audit left the choice open (a file, or a note that the project has none by design). It opens with the newest release, and `tests/test_cli.py` now holds that heading to `__version__`, so a version bump without a section — or a section for a version the tree is not — fails the suite. Its 0.3.1 section is dated 2026-10-01, the release commit's date; the tag follows a green CI run on that commit, which is the rule every release here follows. v0.1.0 gets a section even though it was never tagged, because the first pushed state is part of the history a reader is catching up on. The two READMEs link it from the roadmap, which is where releases are discussed. |
 
@@ -937,6 +939,21 @@ now says the limit is on language, not on when to start.
     general shape: **when a document is checked mechanically, ask what the check
     cannot see**, and put the answer in the same document so the next reader knows
     which half is held.
+35. **The README checker's first Windows run was red, and the tool was wrong, not
+    the blocks.** Nine blocks per README differed and one command exited 1, and
+    both came from one fact: on Windows a *pipe* carries the machine's ANSI code
+    page — cp1252 on the CI runner — where a console carries UTF-8 (PEP 528).
+    Rich degrades every box to ASCII when the stream cannot encode it
+    (``ConsoleOptions.ascii_only`` is ``not encoding.startswith("utf")``), which
+    is honest and is why the blocks came back as ``+---+`` tables; the tool's own
+    characters — the ``→`` in a rename line, a path like ``工具/文本.py`` — cannot
+    be degraded, so ``archaeology commit`` died with UnicodeEncodeError and the
+    output stopped mid-table. Every one of the 473 tests passed on this machine,
+    because its pipes are UTF-8; the Windows case is reproducible anywhere by
+    running the suite with ``PYTHONIOENCODING=cp1252`` in the parent, which is the
+    cheapest way to have that machine. **A test that runs the tool through a pipe
+    is testing an environment as well as a behaviour**, and an environment has an
+    encoding.
 
 ## Environment notes
 
@@ -1059,9 +1076,12 @@ now says the limit is on language, not on when to start.
     object builder beside `commit.py`'s block, plus a replayed README block. It is
     marked rather than built because v0.3.x is frozen and the JSON surface is part
     of what froze.
-11. **The release is under way**: the date is in `CHANGELOG.md` and the tree is
-    committed. What is left is the tag `v0.3.1` and the GitHub Release, after the
-    push and a green CI run on that commit — the order is the point and
+11. **The release is under way, and its first push taught it something.** `c9359b6`
+    ("Release v0.3.1") is pushed and its two Windows jobs are red — the README
+    checker's first Windows run, which found a real defect rather than a bad
+    block (trap 35) — and the commit after it carries the UTF-8 output decision.
+    What is left is the tag `v0.3.1` and the GitHub Release, and the tag waits on
+    a green run on the fixed tree: the order is the point and
     `docs/v0.3-final-state.md` records it.
 
 ## How to verify

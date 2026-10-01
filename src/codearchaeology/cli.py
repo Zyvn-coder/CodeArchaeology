@@ -6,6 +6,7 @@ fills it with the structure of every Python file version in that history;
 ``cochange`` read it back.
 """
 
+import sys
 from pathlib import Path
 
 import typer
@@ -105,6 +106,36 @@ def _warn_if_behind(repository_root: Path, database: Path) -> str:
     return head_sha
 
 
+def _speak_utf8_outside_a_terminal() -> None:
+    """Write UTF-8 to an output stream that is not a terminal.
+
+    Python already speaks UTF-8 to a Windows console, but a pipe or a file
+    carries the machine's ANSI code page instead — cp1252 on a default Windows
+    install — and this tool's output is not written in cp1252: a renamed file
+    is printed as ``old → new``, a repository may hold a path like
+    ``工具/文本.py``, and rich draws its tables with box characters. Rich
+    degrades the boxes to ASCII when the stream cannot carry them, which is
+    honest, but a path cannot be degraded, and the command dies with
+    UnicodeEncodeError instead — which is what the first Windows CI run of the
+    README checker found, in nine blocks and one exit code.
+
+    A console is left alone: Python's console layer is already UTF-8, and rich
+    knows how to draw on the consoles that are not.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            if stream.isatty():
+                continue
+            reconfigure(encoding="utf-8")
+        except (OSError, ValueError):
+            # A stream that cannot be reconfigured is no reason to refuse to
+            # run the command; it keeps the encoding it has.
+            pass
+
+
 @app.callback()
 def main(
     version: bool = typer.Option(
@@ -117,6 +148,7 @@ def main(
     ),
 ) -> None:
     """CodeArchaeology — reconstruct how a Git repository evolved."""
+    _speak_utf8_outside_a_terminal()
 
 
 @app.command()
