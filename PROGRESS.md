@@ -10,20 +10,29 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-01. v0.3.x is frozen — `docs/v0.3-final-state.md` is the
-record. v0.3.0 is released and unchanged on the remote; everything since is in the
-working tree and uncommitted, and the tree calls itself 0.3.1 (Unit 18: both
-READMEs document all nine commands, their performance tables and known limitations
-are the measurements rather than the ones they replaced, and one gap — `commit`
-has no JSON form — is marked rather than filled). **`CHANGELOG.md` exists as of
-the same unit**, the fifth place the version is written down; its 0.3.1 section is
-dated 2026-10-01. The pass no longer writes a row it already stored; the AST reuse
-path reads its stored definitions in one query and records which analyzer produced
-them. **The release commit is pushed and its Windows jobs are red**: the README
-checker's first Windows run found the tool's output encoding (trap 35), the fix is
-in `cli.py`, and the tag waits on a green run on the fixed tree.**
+**Last updated: 2026-10-01. v0.3.x is frozen and released: `v0.3.1` is tagged at
+`c2d5b97` with a GitHub Release, `main` is pushed, and
+`docs/v0.3-final-state.md` is the record.** Both READMEs document all nine
+commands, `CHANGELOG.md` is the fifth place the version is written down, the pass
+no longer writes a row it already stored, and the AST reuse path records which
+analyzer produced each row. The release's first push is part of the story: the
+Windows jobs found the tool's output encoding (trap 35), and the tag went on the
+fix rather than on the commit that failed. Open on purpose: `commit` has no JSON
+form.
 
 ## Where the project stands
+
+**v0.3.1 is released.** The tag is at `c2d5b97` and its CI run is green on all
+four jobs; the GitHub Release carries the notes. The first push of the release was
+red on Windows, and what it found was a real defect rather than a bad block (trap
+35): a Windows pipe carries the machine's ANSI code page, rich degrades its boxes
+to ASCII there, and the tool's own non-ASCII characters — a rename arrow, a path
+like `工具/文本.py` — could not be degraded, so `commit` died with
+UnicodeEncodeError. The fix writes UTF-8 to a stream that is not a terminal. **The
+tag is on the second commit, not the first**, because a tag whose own CI is red is
+worse than a tag that moves: the same rule v0.3.0's release followed, and the
+failed run is still in the Actions log so the sequence is visible rather than
+erased.
 
 **v0.3.0 is released.** Unit 9 was the release: both READMEs describe all eight
 commands the CLI had then, the structure layer's five rules are stated in them,
@@ -1076,13 +1085,12 @@ now says the limit is on language, not on when to start.
     object builder beside `commit.py`'s block, plus a replayed README block. It is
     marked rather than built because v0.3.x is frozen and the JSON surface is part
     of what froze.
-11. **The release is under way, and its first push taught it something.** `c9359b6`
-    ("Release v0.3.1") is pushed and its two Windows jobs are red — the README
-    checker's first Windows run, which found a real defect rather than a bad
-    block (trap 35) — and the commit after it carries the UTF-8 output decision.
-    What is left is the tag `v0.3.1` and the GitHub Release, and the tag waits on
-    a green run on the fixed tree: the order is the point and
-    `docs/v0.3-final-state.md` records it.
+11. **The release is done.** `v0.3.1` is tagged at `c2d5b97` — the fix commit,
+    because the release commit's Windows jobs were red (trap 35) — and the GitHub
+    Release is made. **Closed**, and it closes Unit 18 with it: all ten v0.4
+    preconditions in `docs/v0.3-final-state.md` are checked. What comes next is
+    v0.4, and it starts from a design freeze of its own rather than from this
+    layer's assumptions.
 
 ## How to verify
 
