@@ -1062,6 +1062,10 @@ now says the limit is on language, not on when to start.
      allocation and paging rather than the query, which is **not established**.
      It is a restructuring of the walk, not a parameter, so it is a unit of its
      own.
+   **The user's call, 2026-10-01: neither candidate is for now.** Memory is not
+   what is in the way at the sizes the tool is used at yet, and this is much later
+   work; the numbers above stay so that whoever picks it up starts from a
+   measurement rather than from the idea.
 7. **The rescan writes the whole history on every `analyze`.** 85% of it at
    200,000 commits — 35.06s of 41.02s — is `write_commits` deleting and
    re-inserting 1,000,500 `commit_files` rows git already reported, whether or not
