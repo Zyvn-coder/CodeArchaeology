@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from codearchaeology.analysis import analyze
 from codearchaeology.cli import app
 from codearchaeology.history import read_commits
-from codearchaeology.hotspots import Hotspot, build_json, rank_hotspots
+from codearchaeology.hotspots import Hotspot, build_inventory, build_json, rank_hotspots
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
 from codearchaeology.statistics import summarize
 from sample_repo import add_commit, build_lifecycle_repo, build_sample_repo
@@ -17,6 +17,18 @@ from sample_repo import add_commit, build_lifecycle_repo, build_sample_repo
 runner = CliRunner()
 
 FIXTURE_FILES = 5
+
+# The sample fixture's six files, in the order the inventory prints them: by
+# path. ``legacy.py`` is deleted, which is why the inventory has one more row
+# than the ranking, whose five living files are a subset of these.
+_FIXTURE_PATHS = (
+    "README.md",
+    "assets/logo.png",
+    "core/app.py",
+    "core/cache.py",
+    "legacy.py",
+    "工具/文本.py",
+)
 
 
 @pytest.fixture(scope="module")
@@ -189,11 +201,45 @@ def test_files_command_prints_a_table(sample_repo: Path, analyzed: Path) -> None
 
     assert result.exit_code == 0
     assert "FILE" in result.stdout
+    assert "STATE" in result.stdout
     assert "COMMITS" in result.stdout
     assert "+LINES" in result.stdout
     assert "-LINES" in result.stdout
     assert "core/app.py" in result.stdout
     assert "19" in result.stdout
+
+
+def test_files_command_lists_the_deleted_file_with_its_state(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    """The inventory's whole point: the file is gone and still listed."""
+    result = _run_files(sample_repo, analyzed)
+
+    assert result.exit_code == 0
+    assert "legacy.py" in result.stdout
+    assert "deleted" in result.stdout
+    assert "alive" in result.stdout
+
+
+def test_files_command_says_what_a_deleted_row_means(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    """A list of dead files invites one misreading, so it is answered."""
+    result = _run_files(sample_repo, analyzed)
+
+    assert "not what the working tree contains" in result.stdout
+
+
+def test_files_command_orders_by_path(sample_repo: Path, analyzed: Path) -> None:
+    """The inventory is a listing, so the order is the path's, not the count's."""
+    result = _run_files(sample_repo, analyzed, "--all")
+
+    order = [
+        line.split()[0]
+        for line in result.stdout.splitlines()
+        if line.strip() and line.split()[0] in _FIXTURE_PATHS
+    ]
+    assert order == sorted(_FIXTURE_PATHS)
 
 
 def test_files_command_limits_and_says_how_many_are_hidden(
@@ -203,7 +249,7 @@ def test_files_command_limits_and_says_how_many_are_hidden(
 
     assert result.exit_code == 0
     assert "工具/文本.py" not in result.stdout
-    assert f"{FIXTURE_FILES - 2} more files. Use --all to see them." in result.stdout
+    assert f"{FIXTURE_FILES + 1 - 2} more files. Use --all to see them." in result.stdout
 
 
 def test_files_command_all_shows_every_file(sample_repo: Path, analyzed: Path) -> None:
@@ -224,6 +270,37 @@ def test_files_command_warns_when_the_analysis_is_behind(tmp_path: Path) -> None
 
     assert result.exit_code == 0
     assert "Note: this analysis stops at" in result.stderr
+
+
+def test_the_inventory_holds_every_file_the_history_contained(lives) -> None:
+    """Nothing is filtered: the deleted file is as much a fact as the living."""
+    entries = build_inventory(lives)
+
+    assert len(entries) == len(lives)
+    assert {entry.state for entry in entries} == {"alive", "deleted"}
+    assert "heavy.py" in [entry.current_path for entry in entries]
+
+
+def test_the_inventory_is_ordered_by_path_then_birth(lives) -> None:
+    entries = build_inventory(lives)
+
+    keys = [(entry.current_path, entry.born) for entry in entries]
+    assert keys == sorted(keys)
+
+
+def test_the_inventory_agrees_with_the_ranking_where_they_overlap(lives) -> None:
+    """The two commands print the same numbers for the same file."""
+    ranking = _by_path(rank_hotspots(lives))
+    inventory = {entry.current_path: entry for entry in build_inventory(lives)}
+
+    assert ranking.keys() <= inventory.keys()
+    for path, row in ranking.items():
+        entry = inventory[path]
+        assert (entry.commits, entry.additions, entry.deletions) == (
+            row.commits,
+            row.additions,
+            row.deletions,
+        )
 
 
 def test_json_reports_the_ranking_in_order(ranking) -> None:
@@ -247,40 +324,79 @@ def test_json_row_carries_the_names_the_count_covers(ranking) -> None:
     assert reported["files"][0]["path_history"] == ["kept.py", "reused.py"]
 
 
-def test_files_and_hotspots_json_are_the_same_bytes(
-    sample_repo: Path, analyzed: Path
-) -> None:
-    """The two commands differ only in how the terminal draws the ranking, and
-    JSON is not a terminal drawing, so they must not differ here."""
+def test_the_two_json_shapes_differ(sample_repo: Path, analyzed: Path) -> None:
+    """They answer different questions, so they must not share a shape.
+
+    The ranking cannot contain a deleted file and carries no state; the
+    inventory must do both. Identical bytes would mean the schema was hiding a
+    difference the command line shows.
+    """
     from_files = _run_files(sample_repo, analyzed, "--json")
     from_hotspots = _run(sample_repo, analyzed, "--json")
 
     assert from_files.exit_code == 0
     assert from_hotspots.exit_code == 0
-    assert from_files.stdout == from_hotspots.stdout
+    assert from_files.stdout != from_hotspots.stdout
+
+    inventory = json.loads(from_files.stdout)["files"]
+    ranking = json.loads(from_hotspots.stdout)["files"]
+
+    assert "state" in inventory[0]
+    assert "state" not in ranking[0]
 
 
-def test_files_json_is_parseable_and_limited(
+def test_the_ranking_json_is_unchanged_by_the_split(ranking) -> None:
+    """`hotspots --json` keeps the bytes it had before `files` moved.
+
+    Its consumers are the ones that must not have to change, so the ranking's
+    object is still exactly these fields.
+    """
+    reported = json.loads(build_json(ranking, "/tmp/wherever", "abc123"))
+
+    assert set(reported) == {"repository", "head_sha", "files"}
+    assert set(reported["files"][0]) == {
+        "path",
+        "commits",
+        "additions",
+        "deletions",
+        "path_history",
+    }
+
+
+def test_inventory_json_carries_the_state_and_the_names(
     sample_repo: Path, analyzed: Path
 ) -> None:
-    result = _run_files(sample_repo, analyzed, "--limit", "2", "--json")
-
+    result = _run_files(sample_repo, analyzed, "--json")
     reported = json.loads(result.stdout)
 
-    assert len(reported["files"]) == 2
-    assert reported["files"][0]["path"] == "core/app.py"
-    assert reported["files"][0]["commits"] == 3
+    by_path = {entry["path"]: entry for entry in reported["files"]}
+
+    assert by_path["legacy.py"]["state"] == "deleted"
+    assert by_path["legacy.py"]["commits"] == 2
+    assert by_path["README.md"]["state"] == "alive"
+    assert by_path["core/app.py"]["path_history"] == ["app.py", "core/app.py"]
 
 
-def test_files_json_leaves_out_the_note_the_table_prints(
+def test_inventory_json_is_complete_where_the_table_is_sliced(
     sample_repo: Path, analyzed: Path
 ) -> None:
-    """``hotspots`` ends by saying a count is not importance. That is a sentence
-    for a reader, and stdout has to stay parseable."""
-    result = _run(sample_repo, analyzed, "--json")
+    """`--limit` is a terminal convenience; a program asked for the inventory."""
+    result = _run_files(sample_repo, analyzed, "--limit", "2", "--json")
+    reported = json.loads(result.stdout)
+
+    assert len(reported["files"]) == FIXTURE_FILES + 1
+    assert [entry["path"] for entry in reported["files"]] == sorted(_FIXTURE_PATHS)
+
+
+def test_files_json_leaves_out_the_sentence_the_table_prints(
+    sample_repo: Path, analyzed: Path
+) -> None:
+    """The note about deleted rows is prose for a reader, and the state field
+    already says the same fact to a program."""
+    result = _run_files(sample_repo, analyzed, "--json")
 
     assert "Frequent change" not in result.stdout
-    assert "more files" not in result.stdout
+    assert "not what the working tree contains" not in result.stdout
     assert json.loads(result.stdout)
 
 

@@ -6,19 +6,27 @@ reader of ours would be answering its own question.
 """
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from codearchaeology import ast_pass as ast_pass_module
 from codearchaeology.analysis import analyze
-from codearchaeology.ast_pass import run_ast_pass
+from codearchaeology.ast_pass import (
+    ANALYZER_VERSION,
+    _already_stored,
+    producer_version,
+    run_ast_pass,
+)
 from codearchaeology.cli import app
 from codearchaeology.definitions import interpreter_version
 from codearchaeology.storage import (
     CREATED,
     MODIFIED,
     UNCHANGED,
+    FileVersion,
     connect,
 )
 from sample_repo import (
@@ -232,6 +240,114 @@ def test_a_version_whose_content_changed_is_parsed_again(passed) -> None:
 
     assert again.parsed == 1, "the new version is the only one that is new"
     assert again.reused == first.file_versions
+
+
+def _batches_written(monkeypatch) -> list[list]:
+    """Every batch the pass hands to the writer, so a run that wrote nothing shows.
+
+    A count of the calls is the only way to see the difference from outside: a
+    pass that rewrote identical rows would leave exactly the same rows behind.
+    """
+    batches: list[list] = []
+    original = ast_pass_module.write_ast_batch
+
+    def counted(connection, rows):
+        batches.append(list(rows))
+        return original(connection, rows)
+
+    monkeypatch.setattr(ast_pass_module, "write_ast_batch", counted)
+    return batches
+
+
+def test_a_second_pass_writes_nothing_at_all(passed, monkeypatch) -> None:
+    """Reuse saves the write as well as the parse.
+
+    Every version is the one already stored, so every row the pass would write is
+    a row that is already there — and deleting and re-inserting them is work with
+    no effect. Measured before this existed: 73 s of a 112 s second pass at
+    50,000 commits, spent to store what was already stored.
+    """
+    repository, database, first = passed
+    batches = _batches_written(monkeypatch)
+
+    again = run_ast_pass(repository, database)
+
+    assert again.reused == first.file_versions
+    assert (again.parsed, again.failed) == (0, 0)
+    assert batches == []
+
+
+def test_only_the_versions_that_are_new_are_written(passed, monkeypatch) -> None:
+    """The partial case: a history that grew by one version writes one version."""
+    repository, database, first = passed
+    _commit_python(repository, TWO_SAME_NAMES, "a different file")
+    analyze(repository, database)
+    batches = _batches_written(monkeypatch)
+
+    again = run_ast_pass(repository, database)
+
+    assert (again.parsed, again.reused) == (1, first.file_versions)
+    assert [len(batch) for batch in batches] == [1]
+
+
+def test_a_stored_row_the_rules_would_not_write_is_written_again(
+    passed, monkeypatch
+) -> None:
+    """Skipping the write must not be able to freeze a wrong comparison.
+
+    ``change_type`` is worked out against the version before this one, so a
+    history that moved under a stored row — a rename that no longer follows the
+    same chain, a threshold that changed — moves the comparison without moving
+    this version's own bytes. The skip is therefore a comparison and not an
+    assumption: the version is reused, and it is still written, because what
+    would be written is not what is stored.
+    """
+    repository, database, first = passed
+    first_commit = _shas(repository)[0]
+    connection = connect(database)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE definition_versions SET change_type = ?"
+                " WHERE path = ? AND commit_sha = ?",
+                (UNCHANGED, PYTHON_FILE, first_commit),
+            )
+    finally:
+        connection.close()
+    batches = _batches_written(monkeypatch)
+
+    again = run_ast_pass(repository, database)
+
+    assert again.reused == first.file_versions, "the version is still reused"
+    assert [len(batch) for batch in batches] == [1], "and it is written back"
+    connection = connect(database)
+    try:
+        assert _changes(connection, PYTHON_FILE, first_commit) == {
+            "login": CREATED,
+            "helper": CREATED,
+        }
+    finally:
+        connection.close()
+
+
+def test_the_skip_compares_the_version_row_as_well_as_the_definitions() -> None:
+    """The helper's whole rule, including the half the pass cannot produce.
+
+    A reused version always has the row that is already stored, so the check on
+    the row itself is unreachable through the pass — and it is what makes the
+    helper's question ("is the database already holding what would be written?")
+    answerable without knowing why it was asked.
+    """
+    stored = FileVersion(
+        commit_sha="a" * 40,
+        path=PYTHON_FILE,
+        content_sha="b" * 40,
+        parsed_at_version=producer_version(),
+    )
+    assert _already_stored(stored, stored, None, ())
+    assert _already_stored(stored, stored, (), ())
+    assert not _already_stored(stored, replace(stored, content_sha="c" * 40), (), ())
+    assert not _already_stored(None, stored, (), ())
 
 
 def test_a_file_with_no_definitions_still_has_a_version(tmp_path: Path) -> None:
@@ -510,6 +626,49 @@ def test_a_row_read_by_another_interpreter_is_read_again(passed) -> None:
             row["parsed_at_version"]
             for row in connection.execute("SELECT parsed_at_version FROM file_versions")
         }
-        assert stored == {interpreter_version()}
+        assert stored == {producer_version()}
     finally:
         connection.close()
+
+
+def test_a_row_written_by_another_analyzer_is_read_again(passed) -> None:
+    """Same bytes, same interpreter, different analyzer: not the same evidence.
+
+    The stored fingerprints and `change_type` values are the analyzer's answer
+    as much as the parser's, so a row produced by an older analyzer must not be
+    reused under a rule that has since changed. The marker is the second half of
+    `parsed_at_version`, and this is the test that says so.
+    """
+    repository, database, _ = passed
+    connection = connect(database)
+    try:
+        with connection:
+            # The interpreter stays; only the analyzer's half of the version
+            # moves, which is exactly the case a bare interpreter string would
+            # have let through.
+            connection.execute(
+                "UPDATE file_versions SET parsed_at_version = ?",
+                (f"{interpreter_version()}+0",),
+            )
+    finally:
+        connection.close()
+
+    again = run_ast_pass(repository, database)
+
+    assert (again.reused, again.parsed, again.failed) == (0, 5, 1)
+
+    connection = connect(database)
+    try:
+        stored = {
+            row["parsed_at_version"]
+            for row in connection.execute("SELECT parsed_at_version FROM file_versions")
+        }
+        assert stored == {producer_version()}
+    finally:
+        connection.close()
+
+
+def test_the_producer_version_names_both_halves() -> None:
+    """``3.13.5+1``: what parsed it and what analyzed it."""
+    assert producer_version() == f"{interpreter_version()}+{ANALYZER_VERSION}"
+    assert ANALYZER_VERSION.isdigit()

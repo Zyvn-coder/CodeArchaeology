@@ -1,9 +1,9 @@
 """Command line entry point for CodeArchaeology.
 
-Eight commands: ``analyze`` fills the database with the git history and ``ast``
+Nine commands: ``analyze`` fills the database with the git history and ``ast``
 fills it with the structure of every Python file version in that history;
-``timeline``, ``hotspots``, ``files``, ``file``, ``commit`` and ``structure``
-read it back.
+``timeline``, ``hotspots``, ``files``, ``file``, ``commit``, ``structure`` and
+``cochange`` read it back.
 """
 
 from pathlib import Path
@@ -21,14 +21,25 @@ from codearchaeology.analysis import (
 from codearchaeology.analysis import analyze as run_analysis
 from codearchaeology.ast_pass import PYTHON_SUFFIX, run_ast_pass
 from codearchaeology.cache import database_path
+from codearchaeology.cochange import (
+    DEFAULT_LARGE_COMMIT_LIMIT,
+    DEFAULT_MIN_SHARED,
+    analyze_cochange,
+)
+from codearchaeology.cochange import build_block as build_cochange_block
+from codearchaeology.cochange import build_json as build_cochange_json
+from codearchaeology.cochange import build_table as build_cochange_table
+from codearchaeology.cochange import load_cochange_commits
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
 from codearchaeology.definition_history import load_histories
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
 from codearchaeology.history import GitError, find_repository_root
-from codearchaeology.hotspots import build_json as build_ranking_json
-from codearchaeology.hotspots import build_table as build_files_table
+from codearchaeology.hotspots import DELETED_FILES_NOTE, build_inventory
+from codearchaeology.hotspots import build_inventory_json as build_files_json
+from codearchaeology.hotspots import build_inventory_table as build_files_table
+from codearchaeology.hotspots import build_json as build_hotspots_json
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
 from codearchaeology.structure import (
@@ -254,7 +265,7 @@ def hotspots(
     if as_json:
         # Nothing else may go to stdout, including the note below: the output has
         # to stay parseable.
-        typer.echo(build_ranking_json(selected, repository_root, head_sha))
+        typer.echo(build_hotspots_json(selected, repository_root, head_sha))
         return
 
     typer.echo("Most Active Files")
@@ -291,7 +302,7 @@ def files(
         False, "--json", help="Print JSON instead of the table."
     ),
 ) -> None:
-    """List the files, most changed first."""
+    """List every file the history contains, deleted ones included."""
     try:
         repository_root, database = _repository_and_database(path, database)
         lives = load_lifecycles(repository_root, database)
@@ -301,11 +312,13 @@ def files(
 
     head_sha = _warn_if_behind(repository_root, database)
 
-    rows = rank_hotspots(lives)
+    rows = build_inventory(lives)
     selected = rows if show_all else rows[:limit]
 
     if as_json:
-        typer.echo(build_ranking_json(selected, repository_root, head_sha))
+        # The whole inventory, not the slice: --limit is a terminal convenience,
+        # and a program that asked for the inventory asked for all of it.
+        typer.echo(build_files_json(rows, repository_root, head_sha))
         return
 
     console = Console()
@@ -314,6 +327,11 @@ def files(
     hidden = len(rows) - len(selected)
     if hidden:
         typer.echo(f"\n{hidden} more files. Use --all to see them.")
+
+    # A list that shows dead files invites one misreading — that they are gone
+    # from the working tree — so the command says which one it is.
+    typer.echo()
+    typer.echo(DELETED_FILES_NOTE)
 
 
 @app.command()
@@ -495,3 +513,98 @@ def structure(
         console = Console()
         typer.echo()
         console.print(build_version_table(definitions, console.width))
+
+
+@app.command()
+def cochange(
+    file_path: str = typer.Argument(..., help="File to ask about, as git writes it."),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    limit: int = typer.Option(
+        20, "--limit", "-n", min=1, help="How many files to show."
+    ),
+    show_all: bool = typer.Option(False, "--all", help="Show every file."),
+    min_shared: int = typer.Option(
+        DEFAULT_MIN_SHARED,
+        "--min-shared",
+        min=1,
+        help="Hide pairs that share fewer commits than this.",
+    ),
+    large_commit_limit: int = typer.Option(
+        DEFAULT_LARGE_COMMIT_LIMIT,
+        "--large-commit-limit",
+        min=1,
+        help="Leave commits touching more files than this out of the analysis.",
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Show the files that change in the same commits as this one."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        stored = load_cochange_commits(repository_root, database)
+    except (GitError, AnalysisError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    head_sha = _warn_if_behind(repository_root, database)
+
+    wanted = normalise(file_path)
+    reports = analyze_cochange(
+        stored,
+        wanted,
+        large_commit_limit=large_commit_limit,
+        min_shared=min_shared,
+    )
+    if not reports:
+        typer.echo(
+            f"Error: nothing in the stored history touched {wanted};"
+            f" use 'archaeology files' to see what is there",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if as_json:
+        # Nothing else may go to stdout: the output has to stay parseable.
+        typer.echo(build_cochange_json(reports, wanted, repository_root, head_sha))
+        return
+
+    console = Console()
+    for position, report in enumerate(reports):
+        if position:
+            typer.echo()
+
+        typer.echo(build_cochange_block(report))
+
+        if not report.co_changes:
+            typer.echo()
+            typer.echo("No file changed alongside it.")
+        else:
+            selected = report.co_changes if show_all else report.co_changes[:limit]
+            typer.echo()
+            console.print(build_cochange_table(selected, console.width))
+
+            hidden = len(report.co_changes) - len(selected)
+            if hidden:
+                typer.echo(f"{hidden} more files. Use --all to see them.")
+
+        if report.hidden_pairs:
+            typer.echo(
+                f"{report.hidden_pairs} pairs hidden: fewer than"
+                f" {min_shared} shared commits."
+            )
+        if report.excluded_large_commits:
+            typer.echo(
+                f"{report.excluded_large_commits} commits of this file left out:"
+                f" more than {large_commit_limit} files changed in them."
+            )
+
+    typer.echo()
+    # The score is the whole point of the command, so the command has to say
+    # what it is a share of and what it is not.
+    typer.echo(
+        "The score is the share of this file's analyzed commits that touched"
+        " the other file. Moving together is not a dependency, and a shared"
+        " commit is not evidence of one."
+    )

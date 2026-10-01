@@ -25,6 +25,8 @@ from codearchaeology.storage import (
     connect,
     get_meta,
     prepare_database,
+    read_all_definition_versions,
+    read_definition_versions,
     write_commits,
     write_definition_versions,
     write_file_versions,
@@ -365,6 +367,42 @@ def test_a_definition_that_is_gone_gets_no_row(database: sqlite3.Connection) -> 
     rows = _rows(database, "definition_versions")
     assert [row["qualname"] for row in rows] == ["login"]
     assert "deleted" not in {row["change_type"] for row in rows}
+
+
+def test_the_bulk_reader_returns_what_the_per_version_one_does(
+    database: sqlite3.Connection,
+) -> None:
+    """One query for the whole table must say what the small queries say.
+
+    The AST pass reads every stored definition in one call on a re-run, because
+    the per-version query cost more than the parsing it saved. This is the test
+    that keeps the two readers from drifting: for every version either can
+    answer for, the answers are the same rows in the same order — the order
+    being what tells two definitions sharing a qualified name apart.
+    """
+    shas = (SHA, "b" * 40, "c" * 40)
+    write_commits(database, [_commit(sha=sha) for sha in shas])
+    write_file_versions(
+        database,
+        [_version(commit_sha=sha, content_sha=str(n) * 40) for n, sha in enumerate(shas, 1)],
+    )
+    # Two versions with definitions, one with none at all — the absence a
+    # reader must not confuse with a version that could not be read.
+    write_definition_versions(
+        database,
+        [
+            _definition(commit_sha=SHA),
+            _definition(commit_sha=SHA, position=1),
+        ],
+    )
+    write_definition_versions(database, [_definition(commit_sha="c" * 40)])
+
+    everything = read_all_definition_versions(database)
+
+    assert set(everything) == {(SHA, "src/app.py"), ("c" * 40, "src/app.py")}
+    for (commit_sha, path), rows in everything.items():
+        assert rows == read_definition_versions(database, commit_sha, path)
+    assert [row.position for row in everything[(SHA, "src/app.py")]] == [0, 1]
 
 
 def test_a_version_that_could_not_be_parsed_is_not_an_empty_version(

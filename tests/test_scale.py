@@ -21,7 +21,7 @@ import pytest
 from codearchaeology.analysis import analyze
 from codearchaeology.ast_pass import run_ast_pass
 from codearchaeology.definition_history import load_histories
-from codearchaeology.definitions import interpreter_version
+from codearchaeology.ast_pass import producer_version
 from codearchaeology.history import read_commits
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import Lifecycle, build_lifecycles
@@ -271,16 +271,19 @@ def test_every_version_holds_exactly_the_definitions_the_fixture_gave_it(scanned
 
 
 def test_every_version_says_which_interpreter_read_it(scanned):
-    """Two interpreters must not be able to pass their rows off as one another's."""
+    """Two interpreters must not be able to pass their rows off as one another's.
+
+    The stored value names the producer, which is the interpreter *and* the
+    analyzer: the same bytes read by the same Python under a different rule are
+    not the same evidence either.
+    """
     database, _ = scanned
     connection = connect(database)
     try:
         versions = connection.execute(
             "SELECT DISTINCT parsed_at_version FROM file_versions"
         ).fetchall()
-        assert [row["parsed_at_version"] for row in versions] == [
-            interpreter_version()
-        ]
+        assert [row["parsed_at_version"] for row in versions] == [producer_version()]
         assert _count(
             connection,
             "SELECT COUNT(*) AS n FROM file_versions WHERE parsed_at_version IS NULL",

@@ -388,6 +388,102 @@ def build_lifecycle_repo(destination):
     return repo
 
 
+def build_cochange_repo(destination):
+    """Create the repository whose co-change numbers can be worked out by hand.
+
+    The history it creates::
+
+        1  create a.py and b.py
+        2  edit a.py and b.py
+        3  edit a.py and create c.py
+
+    Three commits and three files, and between them they are the whole of the
+    statistic's shape: a pair that repeats (a and b, twice), a pair that happens
+    once (a and c), and two files that are each alone in one of their commits
+    (b in commit 1, c in commit 3 — each shares a commit with the other, but
+    only through a).
+
+    The numbers, by hand::
+
+        a  analyzed 3 commits  ->  b shared 2, score 2/3;  c shared 1, score 1/3
+        b  analyzed 2 commits  ->  a shared 2, score 2/2 = 1
+        c  analyzed 1 commit   ->  a shared 1, score 1/1 = 1
+
+    With the default minimum of two shared commits, ``c`` has nothing to show
+    and ``a`` has one hidden pair; with ``min_shared=1`` all three pairs are
+    shown. Both are asserted in ``test_cochange.py``.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "a.py", "a = 1\n")
+    _write_file(repo, "b.py", "b = 1\n")
+    _commit(repo, _day(1), "Create a and b")
+
+    _write_file(repo, "a.py", "a = 2\n")
+    _write_file(repo, "b.py", "b = 2\n")
+    _commit(repo, _day(2), "Edit a and b together")
+
+    _write_file(repo, "a.py", "a = 3\n")
+    _write_file(repo, "c.py", "c = 1\n")
+    _commit(repo, _day(3), "Edit a and create c")
+
+    return repo
+
+
+def build_broken_repo(destination):
+    """Create the repository whose Python file stops parsing.
+
+    The history it creates::
+
+        1  broken.py holds one function, and it reads
+        2  the same file gains a syntax error
+
+    Two commits and one file, and the file is the point: the second version
+    cannot be parsed at all, so the tool has to say "not known" rather than
+    report a deletion it cannot see or print a file that held nothing. The
+    README's ``structure broken.py`` blocks run against this repository, which
+    is why the file is five lines long and the error is where it is: the
+    missing-colon line puts the parser's own report at line 5, column 12, and
+    the block quotes that wording.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "broken.py", BROKEN_BEFORE)
+    _commit(repo, _day(1), "Add broken.py")
+
+    _write_file(repo, "broken.py", BROKEN_AFTER)
+    _commit(repo, _day(2), "Break broken.py")
+
+    return repo
+
+
+# Five lines, so the missing colon is reported on line 5, and the offending
+# token starts at column 12. The README's structure blocks quote that position.
+BROKEN_BEFORE = '''\
+def ok():
+    return 1
+'''
+
+BROKEN_AFTER = '''\
+def ok():
+    return 1
+
+
+def broken(:
+    pass
+'''
+
+
 def build_edit_history_repo(destination):
     """Create the repository that edits one file over and over.
 

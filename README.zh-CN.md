@@ -4,8 +4,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.3，已完成。** 下面八个命令现在就能用：v0.1 带来的三条，v0.2 的
-> `hotspots`、`files` 和 `file`，以及 v0.3 的 `ast` 和 `structure`。项目还没有
+> **状态：v0.3.1，已完成并冻结。** 下面九个命令现在就能用：v0.1 带来的三条，v0.2 的
+> `hotspots`、`files` 和 `file`，以及 v0.3 的 `ast`、`structure` 和 `cochange`。
+> v0.3.x 是什么、不是什么，写在
+> [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里。项目还没有
 > 发布到 PyPI，所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
@@ -37,7 +39,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.3.0
+archaeology 0.3.1
 ```
 
 ## 用法
@@ -45,9 +47,10 @@ archaeology 0.3.0
 所有命令都接受一个"仓库内的目录"作为参数，默认是当前目录。**它们都不会往被分析的
 仓库里写任何东西**——分析结果写进你缓存目录里的数据库。
 
-每条读取历史的命令都支持 `--json`，用同样的字段名把同样的事实输出给别的程序读。
-stdout 上只有 JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是最新的，
-输出都能被解析。`ast` 是例外：它是写入方，打印的是这次做了什么。
+读侧的命令——`timeline`、`hotspots`、`files`、`file`、`structure`、`cochange`——支持
+`--json`，用同样的字段名把同样的事实输出给别的程序读。stdout 上只有 JSON——「分析结果
+已过期」的提示走 stderr——所以无论快照是不是最新的，输出都能被解析。`commit` 目前还没有
+JSON 形式；两个写入方 `analyze` 和 `ast` 打印的是这次做了什么。
 
 ### 分析一个仓库
 
@@ -128,7 +131,7 @@ $ archaeology timeline --json --limit 1
 
 ```console
 $ archaeology timeline --limit 2
-Note: this analysis stops at 78c0647a, but HEAD is now cd173ca5; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Note: this analysis stops at 78c0647a, but HEAD is now fbc2da34; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
 Repository  /home/you/projects/sample-project
 Commits     6 (9 file changes)
 Range       2024-03-01 to 2024-03-10
@@ -179,36 +182,11 @@ Frequent change is not importance: the reason each of these files is busy is not
 `--limit N` 少显示几个，并告诉你还剩多少。`--all` 显示全部。已被删除的文件不在榜单
 里 —— 热点是一个「地方」，而已经不存在的文件不再是地方。
 
-`--json` 把这份排名输出给别的程序读，形状见下面 `files` 一节；`files --json` 输出的
-是**逐字节相同**的内容。
-
-**热点不是判决。** 同一个数字可能来自核心代码、来自不断出问题的代码、来自反复变动
-的需求、来自正在进行中的重构，也可能只是这个文件被编辑得比较勤。CodeArchaeology
-分不清这些，所以它不去分：它只报告一个文件被改了多少次，到此为止。
-
-### 列出所有文件
-
-`files` 把同一份排名打印成表格，一个文件一行。
+`--json` 把这份排名输出给别的程序读。排名的形状不是清单的形状：排名里不可能有已删除
+的文件，所以它没有 `state` 字段，行的顺序按计数。
 
 ```console
-$ archaeology files ~/projects/sample-project
- FILE                   COMMITS   +LINES   -LINES
- ────────────────────────────────────────────────
- core/app.py                  3       19        0
- README.md                    1        3        0
- assets/logo.png              1        0        0
- core/cache.py                1       12        0
- 工具/文本.py                 1        5        0
-```
-
-`--limit N` 和 `--all` 的行为与时间线一致。
-
-`--json` 把这份排名输出给别的程序读。每一行都带上它计数时覆盖的那些名字，因为一行是
-按**身份**计数的：没有这条改名链，就没法区分「一个改过名的文件」和「两个不相干的
-文件」。
-
-```console
-$ archaeology files --json --limit 2 ~/projects/sample-project
+$ archaeology hotspots --json --limit 2 ~/projects/sample-project
 {
   "repository": "/home/you/projects/sample-project",
   "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
@@ -236,7 +214,113 @@ $ archaeology files --json --limit 2 ~/projects/sample-project
 }
 ```
 
-`hotspots` 命令打印的那句提醒是说给人听的话，所以不在 JSON 里。数字两边完全一样。
+**热点不是判决。** 同一个数字可能来自核心代码、来自不断出问题的代码、来自反复变动
+的需求、来自正在进行中的重构，也可能只是这个文件被编辑得比较勤。CodeArchaeology
+分不清这些，所以它不去分：它只报告一个文件被改了多少次，到此为止。
+
+### 列出所有文件
+
+`files` 回答的是另一个问题：不是「哪些文件最忙」，而是「这个仓库里有什么」。它列出
+历史中出现过的每一个文件 —— 包括已删除的 —— 一行一个，按路径排序，就像目录列表。
+
+```console
+$ archaeology files --all ~/projects/sample-project
+ FILE                   STATE     COMMITS   +LINES   -LINES
+ ──────────────────────────────────────────────────────────
+ README.md              alive           1        3        0
+ assets/logo.png        alive           1        0        0
+ core/app.py            alive           3       19        0
+ core/cache.py          alive           1       12        0
+ legacy.py              deleted         2        5        5
+ 工具/文本.py           alive           1        5        0
+
+Deleted files are in the list on purpose: this is what the history contains, not what the working tree contains.
+```
+
+`STATE` 这一列决定了这一行的含义：`legacy.py` 已被删除，所以它的数字描述的是一段
+已经结束的生命，命令把这一点直接写出来。改过名的文件仍然只有一行 —— `core/app.py`
+就是出生时叫 `app.py` 的那个文件 —— 因为「这里有几个文件」对每个文件只能有一个答案。
+
+`--limit N`（默认 20）和 `--all` 的行为与时间线一致。`hotspots` 按计数排名活着的
+文件，这个命令按路径列出全部；两者对同一个文件打印的数字完全一致。
+
+`--json` 输出**整份清单**，不做切片：`--limit` 是给终端看的便利，而一个程序既然要
+清单就是要全部。每一行都带 `state`，也带上它计数时覆盖的那些名字 —— 一行是按**身份**
+计数的，没有这条改名链，就没法区分「一个改过名的文件」和「两个不相干的文件」。
+
+```console
+$ archaeology files --json ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "files": [
+    {
+      "path": "README.md",
+      "state": "alive",
+      "commits": 1,
+      "additions": 3,
+      "deletions": 0,
+      "path_history": [
+        "README.md"
+      ]
+    },
+    {
+      "path": "assets/logo.png",
+      "state": "alive",
+      "commits": 1,
+      "additions": 0,
+      "deletions": 0,
+      "path_history": [
+        "assets/logo.png"
+      ]
+    },
+    {
+      "path": "core/app.py",
+      "state": "alive",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ]
+    },
+    {
+      "path": "core/cache.py",
+      "state": "alive",
+      "commits": 1,
+      "additions": 12,
+      "deletions": 0,
+      "path_history": [
+        "core/cache.py"
+      ]
+    },
+    {
+      "path": "legacy.py",
+      "state": "deleted",
+      "commits": 2,
+      "additions": 5,
+      "deletions": 5,
+      "path_history": [
+        "legacy.py"
+      ]
+    },
+    {
+      "path": "工具/文本.py",
+      "state": "alive",
+      "commits": 1,
+      "additions": 5,
+      "deletions": 0,
+      "path_history": [
+        "工具/文本.py"
+      ]
+    }
+  ]
+}
+```
+
+关于已删除文件的那句话是说给人听的；`state` 对程序说的是同一件事，所以 JSON 里不
+重复它。
 
 ### 查看单个文件
 
@@ -513,7 +597,7 @@ parse  function
 ```console
 $ archaeology structure broken.py ~/projects/broken-project
 broken.py
-Version:     2024-03-02 09:00:00 +0000  88003169
+Version:     2024-05-02 09:00:00 +0000  f1f2a3f8
 
 AST analysis unavailable: parse failed
   SyntaxError: invalid syntax (line 5, column 12)
@@ -523,11 +607,11 @@ AST analysis unavailable: parse failed
 $ archaeology structure broken.py --history ~/projects/broken-project
 broken.py
 Versions:    1 read, 1 could not be read
-  88003169  SyntaxError: invalid syntax
+  f1f2a3f8  SyntaxError: invalid syntax
 
 ok  function
-  created  2024-03-01 09:00:00 +0000  a0e51834  line 1
-      no ending: 88003169 could not be read, so whether it is still there is not known
+  created  2024-05-01 09:00:00 +0000  fec36049  line 1
+      no ending: f1f2a3f8 could not be read, so whether it is still there is not known
 ```
 
 解析失败了，所以这个文件里有什么是完全不知道的——连 `ok` 是否还在里面都不知道。工具
@@ -538,6 +622,90 @@ ok  function
 `structure` 只读 Python。路径不以 `.py` 结尾、历史里从未出现过这个路径、以及 `--history`
 和 `--commit` 同时给出，这三种情况都会被拒绝并说明原因，而不是用一个看起来合理的答案
 糊弄过去。
+
+### 查看哪些文件总是一起变
+
+有些文件是成组移动的：一个模块和它的测试、一份 schema 和读它的代码。`cochange` 只用
+历史里已有的提交回答这个问题，它什么都不推断——不读提交信息、不读文件内容、也不管这些
+文件是干什么的。
+
+```console
+$ archaeology cochange core/app.py
+core/app.py
+History:  app.py -> core/app.py
+
+Analyzed: 3 commits of this file
+
+No file changed alongside it.
+2 pairs hidden: fewer than 2 shared commits.
+
+The score is the share of this file's analyzed commits that touched the other file. Moving together is not a dependency, and a shared commit is not evidence of one.
+```
+
+分数是一个条件比率——**这个文件**的提交里有多大比例动到了对方——所以它不对称：先问
+`core/app.py` 再问 `legacy.py`，是两个分母不同的问题。一对文件要共享两次提交才会被显示，
+因为只共享一次是最弱的证据。`--min-shared 1` 会全部显示，而被隐藏的条数会打印出来而不是
+让人去猜，所以「一条都没有」和「一条都没显示」始终是两个不同的答案：
+
+```console
+$ archaeology cochange core/app.py --min-shared 1
+core/app.py
+History:  app.py -> core/app.py
+
+Analyzed: 3 commits of this file
+
+ FILE        SHARED   SCORE
+ ──────────────────────────
+ README.md        1   0.333
+ legacy.py        1   0.333
+
+The score is the share of this file's analyzed commits that touched the other file. Moving together is not a dependency, and a shared commit is not evidence of one.
+```
+
+另一个旋钮是 `--large-commit-limit`。一次改动超过这个上限（默认 100）个文件的提交，会被
+排除在所有样本之外——一个上千文件的提交是一次批量改动，而不是五十万条两两事实。被排除
+的提交数会跟着答案一起给出：
+
+```console
+$ archaeology cochange core/app.py --min-shared 1 --json
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "path": "core/app.py",
+  "files": [
+    {
+      "path": "core/app.py",
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ],
+      "analyzed_commits": 3,
+      "large_commits_excluded": 0,
+      "hidden_pairs": 0,
+      "co_changes": [
+        {
+          "path": "README.md",
+          "shared_commits": 1,
+          "score": 0.3333333333333333
+        },
+        {
+          "path": "legacy.py",
+          "shared_commits": 1,
+          "score": 0.3333333333333333
+        }
+      ]
+    }
+  ]
+}
+```
+
+**一个名字会为所有用过它的文件作答。** 上面那条 `History` 就是这个文件按顺序用过的名字，
+旧名字下的提交属于同一个样本。删除之后被重新使用的名字会为两个文件作答，因为历史里两个
+都在——JSON 里就是两条 entry。这和其他命令用的是同一套身份：`hotspots` 按文件而不是按
+名字数提交，`file` 会为一个名字用过的每个文件作答。
+
+co-change 是**关于提交的统计**，而块里那句话说清了它不是什么：两个文件一起动不是依赖关系，
+共享一次提交也不是依赖的证据。它是一个该去看一眼的地方，不是一个可以下的结论。
 
 ### 重新跑 `analyze` 不会把结构清掉
 
@@ -551,12 +719,12 @@ $ archaeology analyze ~/projects/sample-project
 Repository  /home/you/projects/sample-project
 Commits     7 (10 file changes)
 Range       2024-03-01 to 2024-03-12
-HEAD        cd173ca5
+HEAD        07968666
 Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 $ archaeology structure core/app.py ~/projects/sample-project
 core/app.py
 History:     app.py -> core/app.py
-Version:     2024-03-12 09:00:00 +0000  cd173ca5
+Version:     2024-03-12 09:00:00 +0000  07968666
 
 AST analysis unavailable: no version was stored for this commit
   run 'archaeology ast' to read the file versions git holds
@@ -586,30 +754,33 @@ Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
 
 ## 性能
 
-`benchmarks/benchmark.py` 测量这个工具赖以成立的四个操作，规模由你指定。它是**手工
-跑的，不进 CI**——断言墙上时钟的测试在机器一忙就会失败，只会教人重跑。
+`benchmarks/benchmark.py` 测量读侧的命令和 AST 这一趟，规模由你指定；它会把这一趟跑
+三次：在一个没有结构的库上、紧接着在同一个库上、以及在一个刚多了一百个提交的库上。它是
+**手工跑的，不进 CI**——断言墙上时钟的测试在机器一忙就会失败，只会教人重跑。
 
 ```console
-$ uv run python benchmarks/benchmark.py --commits 20000 100000 200000
+$ uv run python benchmarks/benchmark.py --commits 10000 50000 100000 200000
 ```
 
 在一台机器上、跑一份生成的历史、每个数字取三次里最快的一次：
 
-| 提交数 | 文件改动 | 仓库 | 数据库 | `analyze` | `timeline` | `hotspots` | `file <path>` | `file <path>` 仅按名字 |
+| 提交数 | 文件改动 | 仓库 | 数据库 | `analyze` | `timeline` | `hotspots` | `file <path>` | 仅按名字 |
 |---|---|---|---|---|---|---|---|---|
-| 20,000 | 100,000 | 15 MB | 25 MB | 3.4s | 0.6s | 0.8s | 0.8s | 0.06s |
-| 100,000 | 500,000 | 77 MB | 124 MB | 19.7s | 4.0s | 6.5s | 6.4s | 0.30s |
-| 200,000 | 1,000,000 | 154 MB | 248 MB | 45.6s | 8.5s | 13.8s | 13.8s | 0.64s |
+| 10,000 | 50,500 | 8.5 MB | 12.4 MB | 1.4s | 0.24s | 0.36s | 0.39s | 0.03s |
+| 50,000 | 250,500 | 42 MB | 62.6 MB | 7.8s | 1.7s | 2.3s | 2.3s | 0.13s |
+| 100,000 | 500,500 | 84 MB | 125 MB | 17.1s | 3.5s | 5.6s | 5.6s | 0.27s |
+| 200,000 | 1,000,500 | 168 MB | 250 MB | 41.0s | 8.6s | 13.6s | 13.3s | 0.61s |
 
-**历史是生成的，所以看曲线，不要看具体数字。** 生成方式是文件被创建、然后原地一行一行
-地改。真实仓库的 diff 更大、改名更多、文件大小的长尾更长，这三样都会移动这些数字。
+**历史是生成的，所以看曲线，不要看具体数字。** 200 个文件，每次提交改其中 5 个，没有
+改名也没有删除，所以每次提交的大小是齐的。真实仓库的 diff 更大、改名更多、文件大小的
+长尾更长，这三样都会移动这些数字。
 
 曲线说明了什么：
 
-- **没有任何一处是平方复杂度。** 从 10 万提交到 20 万，每个操作的耗时大致翻倍。而在
-  2 万到 10 万之间涨幅超过五倍，那是工作集装不进缓存的位置，不是算法换了形状。
+- **没有任何一处是平方复杂度。** 从一万提交到二十万，每个操作的耗时大致随历史翻倍。
 - **`analyze` 是主要开销，而且只付一次。** 从 git 里把历史读出来、再写进 SQLite，比
-  之后所有查询加起来还贵。它之后的一切都是读数据库。
+  之后所有查询加起来还贵——而在二十万提交时，其中 85% 是写入：重扫会把每个提交、每个
+  父提交、每一行文件改动都重写一遍，不管有没有变。它之后的一切都是读数据库。
 - **`hotspots` 和 `file <path>` 一样贵**，因为一个文件的一辈子只能靠走完整张提交图才能
   重建，而这两条都需要。这不是巧合、也不是该被优化掉的东西，这是模型本身的形状。
 - **按名字问比按身份问便宜一到两个数量级**，因为前者是一条查询，后者是一次遍历。它们
@@ -618,38 +789,39 @@ $ uv run python benchmarks/benchmark.py --commits 20000 100000 200000
 
 ### 结构层，单独测量
 
-`ast` 是工具里昂贵的那一半，所以 benchmark 按阶段计时，而不是只给一个总数：从 git 读
-内容、解析、把每个 definition 走成指纹、比较版本、写入。同一份 fixture，Python 3.13，
-在一个空数据库上跑一次：
+`ast` 是工具里昂贵的那一半，所以 benchmark 按阶段计时，并把这一趟跑三次：**cold**（库
+里还没有结构）、**warm**（紧接着在同一个库上，每个版本都已存好）和 **grown**（追加一百
+个提交、跑 `analyze`、再跑这一趟）。同一份 fixture，Python 3.13：
 
-| 提交数 | 文件版本 | Definitions | 数据库（Git） | 数据库（含 AST） | `ast` 一趟 |
-|---|---|---|---|---|---|
-| 1,000 | 5,000 | 27,000 | 1.3 MB | 10.1 MB | 3.0s |
-| 10,000 | 50,000 | 270,000 | 12.4 MB | 100.4 MB | 35.6s |
-| 100,000 | 500,000 | 2,700,000 | 124.9 MB | 1008.0 MB | 405.3s |
+| 提交数 | 文件版本 | Definitions | 数据库（Git） | 数据库（含 AST） | cold | warm | grown |
+|---|---|---|---|---|---|---|---|
+| 10,000 | 50,500 | 272,700 | 12.4 MB | 101.3 MB | 33.0s | 10.0s | 9.0s |
+| 50,000 | 250,500 | 1,352,700 | 62.6 MB | 505.5 MB | 186.9s | 46.3s | 46.8s |
+| 100,000 | 500,500 | 2,702,700 | 124.9 MB | 1008.8 MB | 395.3s | 109.6s | 134.5s |
+| 200,000 | 1,000,500 | 5,402,700 | 249.5 MB | 2016.1 MB | 809.9s | 304.0s | 333.7s |
 
-- **除写入之外，每个阶段都与文件版本数成线性。** 历史变成十倍，读取、解析、遍历和比较
-  都是十倍。写入速度从约 52,000 行/秒降到约 20,000 行/秒（数据库涨过 page cache 之后），
-  但总时间仍然是线性的。
+- **重跑不解析、不写入，但仍然要把一切都读一遍。** warm 这一趟复用了它存过的每个版本，
+  一行都没有交给写入器，却仍然要花掉第一趟的三分之一：它要把每个 blob 从 git 里读出来
+  才知道它就是存过的那个，还要把每个存下的 definition 读回来比较。省下的是解析和写入。
+- **多了一百个提交之后的那一趟，就写这一百个**——二十万提交时是一百万个版本里的 500 个
+  ——耗时与 warm 差不多，差值主要是中间那次重扫把这一趟要用的页面挤出了操作系统缓存。
+- **除写入之外，每个阶段都与文件版本数成线性。** 写入速度从约 52,000 行/秒降到约
+  20,000 行/秒（数据库涨过 page cache 之后），但总时间仍然是线性的。
 - **遍历树比它前面的解析更贵。** 把每个 definition 渲染出来并哈希，代价大约是解析它
   所在文件的 3.5 倍，各个规模上都是如此。
-- **快照存储的行数是一份变更日志的 2.78–2.99 倍**（这份 fixture 上）。这个比例取决于
-  历史的改动量——本仓库自己的是 2.15——所以 benchmark 打印两个行数，而不是一个倍数。
-- **结构层占用的存储大约是 Git 事实的八倍**，对一个持有六个 definitions 的版本而言。
-  在十万个提交的规模上，125 MB 的 Git 事实会变成 1 GB 的数据库。要拿这个数字做规划，
-  而不是 v0.2 的数据库体积；它会随每个文件的 definition 数量变化。
-- **第二趟几乎和第一趟一样贵**——十万提交时 374s 对 405s。它不解析任何东西、复用了全部
-  版本，但仍然要把每个版本读回来并比较：省下的是解析和遍历，付出的代价是每个版本一次
-  查询。
+- **快照存储的行数约是一份变更日志的三倍**（这份 fixture 上是 2.98–3.00），结构层占用的
+  存储大约是 Git 事实的八倍：二十万提交时，250 MB 的 Git 事实会变成 2 GB 的数据库。
+- **二十万提交的历史跑这一趟大约需要 4 GB 内存**，因为存下的版本和存下的 definitions
+  在工作期间都是整份持有的。要拿这个数字做规划，而不是数据库体积。
 
-这一趟会自己报告成功率，两万提交时是 `parsed 90000, failed 10000`——10.0%，正是 fixture
-里十分之一文件不可解析的比例——而且每一行都带着读它的那个解释器。
+这一趟会自己报告成功率——一万提交时是 `parsed 45000, failed 5000`，10.0%，正是 fixture
+里十分之一文件不可解析的比例——而且每一行都带着读它、分析它的那个生产者。
 
 ## 项目结构
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与八个命令
+    cli.py          Typer 应用与九个命令
     analysis.py     一次分析：读仓库、写数据库
     ast_pass.py     AST 这一趟：读每个 Python 文件版本，存下它的结构
     cache.py        分析数据库放在哪
@@ -662,9 +834,10 @@ src/codearchaeology/
     timeline.py     时间线视图：行数据、表格、JSON
     commit.py       单个提交的视图
     file.py         单个文件的视图：文本块与 JSON
+    cochange.py     co-change 分析：统计量、文本块与 JSON
     lifecycle.py    从存下来的历史里重建每个文件的一辈子
     statistics.py   汇总一个文件一辈子的那些数字
-    hotspots.py     按改动频繁程度给文件排名，以及它的两种呈现
+    hotspots.py     给活着的文件排名，以及列出每个文件的清单
     relationships.py 提交与文件的关系，从任一端都能读
     formatting.py   两个视图共用的小工具
 tests/
@@ -672,6 +845,8 @@ tests/
     conftest.py     把这个仓库交给每个测试的 fixture
 benchmarks/
     benchmark.py    Git 各操作与 AST 这一趟，规模由你指定
+    cochange_benchmark.py  co-change 分析随历史增长的成本
+    index_benchmark.py     每个数据库索引买到了什么、花了什么
 ```
 
 ## 核心原则
@@ -694,17 +869,26 @@ benchmarks/
 |---|---|---|
 | v0.1 | Git 扫描、提交历史、文件改动、SQLite 存储、CLI 时间线 | 已完成 |
 | v0.2 | 文件生命周期、代码热点，以及给别的程序读的 JSON 输出 | 已完成 |
-| v0.3 | AST 分析、函数与类的演化 | 已完成 |
+| v0.3 | AST 分析、函数与类的演化，以及 co-change | 已完成 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 计划中 |
 | v0.5 | Developer Memory —— 你自己的技术使用轨迹 | 计划中 |
 | v0.6 | AI 参与的改动分析与回放 | 计划中 |
 
 每个阶段一次只做一个，前一个稳定之前不设计后一个。
 
+每个版本以及它改了什么，记录在 [CHANGELOG](CHANGELOG.md) 里。
+
 ## 已知限制
 
-- `analyze` 每次都重扫全部历史，两条命令都没有增量：AST 这一趟每次都会走遍所有
-  Python 文件版本。
+- **两个方向上都还没有增量。** `analyze` 重扫全部历史，把每个提交、每个父提交、每一行
+  文件改动都重写一遍——二十万提交时，它 85% 的时间就是这次重写。AST 这一趟每次都会走遍
+  所有 Python 文件版本：它不解析已经解析过的、也不写已经存好的，但仍然要把每个 blob 和
+  每个存下的 definition 读回来才知道这一点。
+- **大仓库要花真金白银的时间和内存。** 二十万提交的历史，第一次 `ast` 约十三分钟、峰值
+  约 4 GB 内存，产出约 2 GB 的数据库。更小的历史在每个维度上都按比例更小：十万提交约
+  七分钟、2 GB 内存、1 GB 数据库。
+- **结构层的体积约是它所依据的 Git 事实的八倍**，因为它是快照而不是变更日志：每个版本的
+  每个 definition 都存下来，而不是只存变过的那些。
 - `--limit` 只影响打印出来的内容：整个历史会先从数据库读出来，然后再切片。
 - 合并提交会记下父节点但没有文件变化，因为 `git log` 对合并不输出 diff。
 - 二进制文件不记录增删行数，显示为 `-`。
@@ -718,6 +902,8 @@ benchmarks/
   根提交，于是其中每个文件都看起来诞生在那里，合并提交也会报出它从未做过的改动。
   `analyze` 会在 stderr 上就此给出提示。
 - `commit` 只接受 sha 和 sha 前缀，不接受 `HEAD`、分支名这类引用。
+- `commit` 没有 JSON 形式，想要一个提交的事实，程序只能去解析文本块；另外六条读侧命令
+  都支持 `--json`。
 - 数据库以仓库绝对路径为键，所以移动或重命名仓库后需要重新分析。
 - 结构层只读 Python，而且一个 definition 靠「同一个文件里的限定名」确定身份。改了名的
   函数是一次死亡加一次出生，而不是一个「变化过的」definition；搬到另一个文件里的
@@ -725,10 +911,17 @@ benchmarks/
   支持不了的推断。
 - 解析不了的文件版本会带着解析器的原话记为 unreadable，绝不会记成「一个空文件」。它的
   definitions 在一个能解析的版本出现之前都是未知的，也不会因为这次失败而被报成删除。
-- 第二趟 `ast` 不解析任何东西、复用所有已读版本，但仍然要把每个版本读回来比较，所以
-  几乎和第一趟一样贵：十万提交时 374s 对 405s。
-- 每一行都带着读它的那个 Python 版本，所以由 3.11 写入、被 3.13 读取的数据库会把那些
-  版本重新读一遍，而不是把两个解释器的结果混在一起。
+- **co-change 分数是关于提交的统计，不是关于代码的断言。** 它是「这个文件的提交里有多大
+  比例动到了对方」，它不对称，而且两个文件一起动并不能证明其中任何一个依赖另一个。一次
+  改动超过 `--large-commit-limit`（默认 100）个文件的提交会被排除在所有样本之外，共享
+  提交少于 `--min-shared`（默认 2）次的一对会被隐藏；两个计数都会报出来，所以「被排除的
+  提交」和「没显示的配对」不会被读成「什么都没找到」。
+- 第二趟 `ast` 不解析任何东西、也不写入任何东西，但仍然要把每个 blob 和每个存下的
+  definition 读回来比较，所以约是第一趟的三分之一：十万提交时 110s 对 395s。
+- 每一行都带着读它的那个 Python 版本**和**比较它的那个分析器版本，所以由更早的解释器或
+  更早的分析器写入的数据库会把那些版本重新读一遍，而不是把两个生产者的结果混在一起。
+  因此，改动「一个 definition 如何渲染或如何比较」会让所有已存的行失效，下一次 `ast`
+  会重新解析。
 - 一个 definition 是按它自身的结构比较的，不是按位置：只在文件里挪了地方的函数是
   `unchanged`。
 - 由 CI 在 Linux 与 Windows、Python 3.11 与 3.13 下验证；macOS 尚未验证。

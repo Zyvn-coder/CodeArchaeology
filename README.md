@@ -4,10 +4,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.3, complete.** The eight commands below work today: the three
-> v0.1 brought, plus `hotspots`, `files` and `file` from v0.2, and `ast` and
-> `structure` from v0.3. The project is not on PyPI yet, so there is no
-> `pip install` for it.
+> **Status: v0.3.1, complete and frozen.** The nine commands below work today: the
+> three v0.1 brought, plus `hotspots`, `files` and `file` from v0.2, and `ast`,
+> `structure` and `cochange` from v0.3. What v0.3.x is and what it is not is
+> written down in [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md). The
+> project is not on PyPI yet, so there is no `pip install` for it.
 
 ## Why this project exists
 
@@ -40,7 +41,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.3.0
+archaeology 0.3.1
 ```
 
 ## Usage
@@ -49,11 +50,12 @@ Every command takes a directory inside the repository, defaulting to the current
 directory. None of them ever writes to the repository: the analysis goes into a
 database in your cache directory.
 
-Every command that reads the history takes `--json`, which prints the same facts
-in the same names for other programs to read. Only the JSON goes to stdout — the
-note about a stale analysis goes to stderr — so the output stays parseable
-whether or not the snapshot is current. `ast` is the exception: it writes rather
-than reads, and prints a summary of what it did.
+The reading commands — `timeline`, `hotspots`, `files`, `file`, `structure` and
+`cochange` — take `--json`, which prints the same facts in the same names for
+other programs to read. Only the JSON goes to stdout — the note about a stale
+analysis goes to stderr — so the output stays parseable whether or not the
+snapshot is current. `commit` has no JSON form yet, and the two writers,
+`analyze` and `ast`, print a summary of what they did instead.
 
 ### Analyze a repository
 
@@ -139,7 +141,7 @@ goes to stderr, which keeps stdout parseable for `--json`:
 
 ```console
 $ archaeology timeline --limit 2
-Note: this analysis stops at 78c0647a, but HEAD is now cd173ca5; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
+Note: this analysis stops at 78c0647a, but HEAD is now fbc2da34; run 'archaeology analyze /home/you/projects/sample-project' to refresh it
 Repository  /home/you/projects/sample-project
 Commits     6 (9 file changes)
 Range       2024-03-01 to 2024-03-10
@@ -192,38 +194,12 @@ Frequent change is not importance: the reason each of these files is busy is not
 one. Files that have been deleted are left out, because a hotspot is a place and
 a file that is gone is no longer one.
 
-`--json` prints the ranking for other programs to read; the shape is shown under
-`files` below, and `files --json` prints exactly the same bytes.
-
-**A hotspot is not a verdict.** The same count can come from core code, from code
-that keeps breaking, from requirements that keep moving, from a refactor in
-progress, or from a file that is simply edited often. CodeArchaeology cannot tell
-those apart, so it does not try: it reports how often a file changed and stops
-there.
-
-### List the files
-
-`files` prints the same ranking as a table, one line per file.
+`--json` prints the ranking for other programs to read. The ranking's shape is
+not the inventory's: a ranking cannot contain a deleted file, so it carries no
+`state` field, and its rows are ordered by count.
 
 ```console
-$ archaeology files ~/projects/sample-project
- FILE                   COMMITS   +LINES   -LINES
- ────────────────────────────────────────────────
- core/app.py                  3       19        0
- README.md                    1        3        0
- assets/logo.png              1        0        0
- core/cache.py                1       12        0
- 工具/文本.py                 1        5        0
-```
-
-`--limit N` and `--all` behave as they do for the timeline.
-
-`--json` prints the ranking for other programs to read. Every row carries the
-names it was counted over, because a row is counted by identity: without the
-chain, a renamed file and two unrelated ones cannot be told apart.
-
-```console
-$ archaeology files --json --limit 2 ~/projects/sample-project
+$ archaeology hotspots --json --limit 2 ~/projects/sample-project
 {
   "repository": "/home/you/projects/sample-project",
   "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
@@ -251,8 +227,121 @@ $ archaeology files --json --limit 2 ~/projects/sample-project
 }
 ```
 
-The caveat the `hotspots` command prints is a sentence for a reader, so it is not
-in the JSON. The count is the same either way.
+**A hotspot is not a verdict.** The same count can come from core code, from code
+that keeps breaking, from requirements that keep moving, from a refactor in
+progress, or from a file that is simply edited often. CodeArchaeology cannot tell
+those apart, so it does not try: it reports how often a file changed and stops
+there.
+
+### List the files
+
+`files` answers a different question: not *which files are busiest* but *what
+this repository contains*. It lists every file the history ever held — deleted
+ones included — one line each, ordered by path the way a directory listing is.
+
+```console
+$ archaeology files --all ~/projects/sample-project
+ FILE                   STATE     COMMITS   +LINES   -LINES
+ ──────────────────────────────────────────────────────────
+ README.md              alive           1        3        0
+ assets/logo.png        alive           1        0        0
+ core/app.py            alive           3       19        0
+ core/cache.py          alive           1       12        0
+ legacy.py              deleted         2        5        5
+ 工具/文本.py           alive           1        5        0
+
+Deleted files are in the list on purpose: this is what the history contains, not what the working tree contains.
+```
+
+The `STATE` column is the fact that changes what a row means: `legacy.py` was
+deleted, so its numbers describe a life that has ended, and the command says so
+in as many words. A renamed file is still one row — `core/app.py` is the file
+that was born as `app.py` — because "how many files are here" must have one
+answer per file.
+
+`--limit N` (default 20) and `--all` behave as they do for the timeline. The
+`hotspots` command ranks living files by count; this one lists all of them by
+path, and the two print the same numbers for any file they both contain.
+
+`--json` prints the whole inventory, not the slice: `--limit` is a terminal
+convenience, and a program that asked for the inventory asked for all of it.
+Every row carries `state` and the names it was counted over — a row is counted
+by identity, and without the chain a renamed file and two unrelated ones cannot
+be told apart.
+
+```console
+$ archaeology files --json ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "files": [
+    {
+      "path": "README.md",
+      "state": "alive",
+      "commits": 1,
+      "additions": 3,
+      "deletions": 0,
+      "path_history": [
+        "README.md"
+      ]
+    },
+    {
+      "path": "assets/logo.png",
+      "state": "alive",
+      "commits": 1,
+      "additions": 0,
+      "deletions": 0,
+      "path_history": [
+        "assets/logo.png"
+      ]
+    },
+    {
+      "path": "core/app.py",
+      "state": "alive",
+      "commits": 3,
+      "additions": 19,
+      "deletions": 0,
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ]
+    },
+    {
+      "path": "core/cache.py",
+      "state": "alive",
+      "commits": 1,
+      "additions": 12,
+      "deletions": 0,
+      "path_history": [
+        "core/cache.py"
+      ]
+    },
+    {
+      "path": "legacy.py",
+      "state": "deleted",
+      "commits": 2,
+      "additions": 5,
+      "deletions": 5,
+      "path_history": [
+        "legacy.py"
+      ]
+    },
+    {
+      "path": "工具/文本.py",
+      "state": "alive",
+      "commits": 1,
+      "additions": 5,
+      "deletions": 0,
+      "path_history": [
+        "工具/文本.py"
+      ]
+    }
+  ]
+}
+```
+
+The sentence about deleted files is for a reader; `state` says the same thing to
+a program, so the JSON does not repeat it.
 
 ### Show one file
 
@@ -551,7 +640,7 @@ has `broken.py` fine in one commit and a syntax error in the next:
 ```console
 $ archaeology structure broken.py ~/projects/broken-project
 broken.py
-Version:     2024-03-02 09:00:00 +0000  88003169
+Version:     2024-05-02 09:00:00 +0000  f1f2a3f8
 
 AST analysis unavailable: parse failed
   SyntaxError: invalid syntax (line 5, column 12)
@@ -561,11 +650,11 @@ AST analysis unavailable: parse failed
 $ archaeology structure broken.py --history ~/projects/broken-project
 broken.py
 Versions:    1 read, 1 could not be read
-  88003169  SyntaxError: invalid syntax
+  f1f2a3f8  SyntaxError: invalid syntax
 
 ok  function
-  created  2024-03-01 09:00:00 +0000  a0e51834  line 1
-      no ending: 88003169 could not be read, so whether it is still there is not known
+  created  2024-05-01 09:00:00 +0000  fec36049  line 1
+      no ending: f1f2a3f8 could not be read, so whether it is still there is not known
 ```
 
 The parse failed, so nothing is known about what the file held — not even whether
@@ -577,6 +666,98 @@ the version of Python that said them.
 `structure` reads Python only. A path that does not end in `.py`, a path the
 stored history never touched, and `--history` given together with `--commit` are
 each refused with a message rather than answered with something plausible.
+
+### Show the files that change together
+
+Some files move as a group: a module and its test, a schema and the code that
+reads it. `cochange` answers that question out of the commits the history already
+has, and it infers nothing — not from the message, not from the content, not from
+what the files are for.
+
+```console
+$ archaeology cochange core/app.py
+core/app.py
+History:  app.py -> core/app.py
+
+Analyzed: 3 commits of this file
+
+No file changed alongside it.
+2 pairs hidden: fewer than 2 shared commits.
+
+The score is the share of this file's analyzed commits that touched the other file. Moving together is not a dependency, and a shared commit is not evidence of one.
+```
+
+The score is a conditional rate — how many of *this* file's commits touched the
+other one — so it is not symmetric: asking about `legacy.py` after asking about
+`core/app.py` is a different question with a different denominator. A pair needs
+two shared commits before it is shown, because one shared commit is the weakest
+evidence there is. `--min-shared 1` shows everything, and the hidden count is
+printed rather than implied, so "none found" and "none shown" stay two different
+answers:
+
+```console
+$ archaeology cochange core/app.py --min-shared 1
+core/app.py
+History:  app.py -> core/app.py
+
+Analyzed: 3 commits of this file
+
+ FILE        SHARED   SCORE
+ ──────────────────────────
+ README.md        1   0.333
+ legacy.py        1   0.333
+
+The score is the share of this file's analyzed commits that touched the other file. Moving together is not a dependency, and a shared commit is not evidence of one.
+```
+
+`--large-commit-limit` is the other knob. A commit that touches more files than
+the limit — 100 by default — is left out of every sample, because a thousand-file
+commit is one bulk change rather than half a million pairwise facts. The count of
+commits left out travels with the answer:
+
+```console
+$ archaeology cochange core/app.py --min-shared 1 --json
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "path": "core/app.py",
+  "files": [
+    {
+      "path": "core/app.py",
+      "path_history": [
+        "app.py",
+        "core/app.py"
+      ],
+      "analyzed_commits": 3,
+      "large_commits_excluded": 0,
+      "hidden_pairs": 0,
+      "co_changes": [
+        {
+          "path": "README.md",
+          "shared_commits": 1,
+          "score": 0.3333333333333333
+        },
+        {
+          "path": "legacy.py",
+          "shared_commits": 1,
+          "score": 0.3333333333333333
+        }
+      ]
+    }
+  ]
+}
+```
+
+**A name answers for every file that ever carried it.** The `History` line above
+is that file's names in order, and the commits under the old name are part of the
+same sample. A name reused after a deletion answers for both files, because the
+history contains both — the JSON then carries one entry per file. This is the
+same identity the rest of the tool uses: `hotspots` counts commits per file
+rather than per name, and `file` answers for every file a name ever named.
+
+Co-change is a *statistic about commits*, and the block says what it is not: two
+files moving together is not a dependency, and a shared commit is not evidence of
+one. It is a place to look, not a conclusion to draw.
 
 ### Re-running `analyze` does not throw the structure away
 
@@ -591,12 +772,12 @@ $ archaeology analyze ~/projects/sample-project
 Repository  /home/you/projects/sample-project
 Commits     7 (10 file changes)
 Range       2024-03-01 to 2024-03-12
-HEAD        cd173ca5
+HEAD        07968666
 Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 $ archaeology structure core/app.py ~/projects/sample-project
 core/app.py
 History:     app.py -> core/app.py
-Version:     2024-03-12 09:00:00 +0000  cd173ca5
+Version:     2024-03-12 09:00:00 +0000  07968666
 
 AST analysis unavailable: no version was stored for this commit
   run 'archaeology ast' to read the file versions git holds
@@ -629,37 +810,40 @@ command to name the file directly.
 
 ## Performance
 
-`benchmarks/benchmark.py` measures the four operations the tool is built around,
-at whatever scale you ask for. It is run by hand, not by CI, because a test that
+`benchmarks/benchmark.py` measures the read-side commands and the AST pass at
+whatever scale you ask for, and it runs the pass three times: on a database with
+no structure in it, on the same one immediately afterwards, and on one that just
+gained a hundred commits. It is run by hand, not by CI, because a test that
 asserts a wall-clock time fails whenever the machine is busy and teaches people
 to re-run it.
 
 ```console
-$ uv run python benchmarks/benchmark.py --commits 20000 100000 200000
+$ uv run python benchmarks/benchmark.py --commits 10000 50000 100000 200000
 ```
 
 On one machine, over a generated history, taking the fastest of three runs:
 
-| Commits | File changes | Repository | Database | `analyze` | `timeline` | `hotspots` | `file <path>` | `file <path>` by name only |
+| Commits | File changes | Repository | Database | `analyze` | `timeline` | `hotspots` | `file <path>` | by name only |
 |---|---|---|---|---|---|---|---|---|
-| 20,000 | 100,000 | 15 MB | 25 MB | 3.4s | 0.6s | 0.8s | 0.8s | 0.06s |
-| 100,000 | 500,000 | 77 MB | 124 MB | 19.7s | 4.0s | 6.5s | 6.4s | 0.30s |
-| 200,000 | 1,000,000 | 154 MB | 248 MB | 45.6s | 8.5s | 13.8s | 13.8s | 0.64s |
+| 10,000 | 50,500 | 8.5 MB | 12.4 MB | 1.4s | 0.24s | 0.36s | 0.39s | 0.03s |
+| 50,000 | 250,500 | 42 MB | 62.6 MB | 7.8s | 1.7s | 2.3s | 2.3s | 0.13s |
+| 100,000 | 500,500 | 84 MB | 125 MB | 17.1s | 3.5s | 5.6s | 5.6s | 0.27s |
+| 200,000 | 1,000,500 | 168 MB | 250 MB | 41.0s | 8.6s | 13.6s | 13.3s | 0.61s |
 
-**The history is generated, so read the curve and not the numbers.** Files are
-created and then edited in place, one line at a time. A real repository has
-larger diffs, more renames, and a longer tail of file sizes, and all three move
-these figures.
+**The history is generated, so read the curve and not the numbers.** 200 files,
+five of them edited per commit, no renames and no deletions, so the commit sizes
+are uniform. A real repository has larger diffs, more renames, and a longer tail
+of file sizes, and all three move these figures.
 
 What the curve says:
 
-- **Nothing is quadratic.** From 100,000 commits to 200,000 the cost of every
-  operation roughly doubles. Between 20,000 and 100,000 it rises faster than
-  fivefold, which is where the working set stops fitting in cache rather than
-  where the algorithm changes shape.
+- **Nothing is quadratic.** Every operation roughly doubles when the history
+  doubles, from ten thousand commits to two hundred thousand.
 - **`analyze` dominates, and it is paid once.** Reading the history out of git
-  and writing it to SQLite costs more than every query put together. Everything
-  after it reads the database instead.
+  and writing it to SQLite costs more than every query put together — and at two
+  hundred thousand commits 85% of it is the writing, because the rescan rewrites
+  every commit, parent and file-change row whether or not anything changed.
+  Everything after it reads the database instead.
 - **`hotspots` and `file <path>` cost the same**, because a file's life can only
   be rebuilt by walking the whole commit graph, and both of them need one. This
   is not a coincidence to be tuned away; it is the shape of the model.
@@ -671,45 +855,52 @@ What the curve says:
 ### The structure layer, measured separately
 
 The `ast` pass is the expensive half of the tool, so the benchmark times it in
-phases rather than as one total: reading the contents out of git, parsing them,
-walking each definition into a fingerprint, comparing versions, and inserting.
-Same fixture, Python 3.13, the pass run once on a fresh database:
+phases and runs it three times: **cold** (a database with no structure in it),
+**warm** (the same database again, where every version is already stored) and
+**grown** (a hundred commits appended, `analyze` run, then the pass). Same
+fixture, Python 3.13:
 
-| Commits | File versions | Definitions | Database (Git) | Database (+ AST) | `ast` pass |
-|---|---|---|---|---|---|
-| 1,000 | 5,000 | 27,000 | 1.3 MB | 10.1 MB | 3.0s |
-| 10,000 | 50,000 | 270,000 | 12.4 MB | 100.4 MB | 35.6s |
-| 100,000 | 500,000 | 2,700,000 | 124.9 MB | 1008.0 MB | 405.3s |
+| Commits | File versions | Definitions | Database (Git) | Database (+ AST) | cold | warm | grown |
+|---|---|---|---|---|---|---|---|
+| 10,000 | 50,500 | 272,700 | 12.4 MB | 101.3 MB | 33.0s | 10.0s | 9.0s |
+| 50,000 | 250,500 | 1,352,700 | 62.6 MB | 505.5 MB | 186.9s | 46.3s | 46.8s |
+| 100,000 | 500,500 | 2,702,700 | 124.9 MB | 1008.8 MB | 395.3s | 109.6s | 134.5s |
+| 200,000 | 1,000,500 | 5,402,700 | 249.5 MB | 2016.1 MB | 809.9s | 304.0s | 333.7s |
 
-- **Every phase is linear in the number of file versions except the insert.** Ten
-  times the history costs ten times the reading, the parsing, the walking and the
-  comparing. The insert slows from about 52,000 rows a second to about 20,000 as
-  the database grows past the page cache; the total stays linear anyway.
+- **A re-run parses nothing, writes nothing, and still reads everything.** The
+  warm pass reuses every version it already stored and hands no row to the
+  writer, and it still costs a third of the first pass: it reads every blob out
+  of git to learn it is the one that was stored, and reads every stored
+  definition back to compare against. What it saves is the parsing and the
+  writing.
+- **A pass after a hundred new commits writes those hundred** — 500 versions out
+  of a million at two hundred thousand commits — and costs about what the warm
+  pass costs, most of the difference being the rescan in between pushing the
+  pass's pages out of the operating system's cache.
+- **Every phase is linear in the number of file versions except the insert**,
+  which slows as the database grows past the page cache (about 52,000 rows a
+  second at ten megabytes, about 20,000 at a gigabyte) and stays linear anyway.
 - **The walk over the tree costs more than the parse that comes before it.**
   Rendering each definition and hashing it costs about three and a half times the
   parsing of the file it came from, at every scale.
-- **A snapshot stores 2.78 to 2.99 rows for every row a change log would keep**
-  over this fixture. The ratio is a property of how much churn a history has —
-  this repository's was 2.15 — so the benchmark prints both counts rather than a
-  growth factor.
-- **The structure layer costs about eight times the Git facts to store**, for a
-  version holding six definitions. At a hundred thousand commits, 125 MB of Git
-  facts become a one-gigabyte database. That is the figure to plan with instead
-  of v0.2's database size, and it moves with the number of definitions per file.
-- **A second pass costs almost as much as the first** — 374s against 405s at a
-  hundred thousand commits. It parses nothing and reuses every version, but it
-  still reads each one back and compares it: the saving is the parse and the
-  walk, and what it pays instead is one query per version.
+- **A snapshot stores about three rows for every row a change log would keep**
+  over this fixture (2.98 to 3.00), and the structure layer costs about eight
+  times the Git facts to store: at two hundred thousand commits, 250 MB of Git
+  facts become a two-gigabyte database.
+- **A two-hundred-thousand-commit history wants about four gigabytes of memory**
+  to run the pass, because the stored versions and the stored definitions are
+  both held whole while it works. That is the figure to plan with, not the
+  database size.
 
-The pass reports its own success rate, `parsed 90000, failed 10000` at twenty
-thousand commits — 10.0%, which is the fixture's one-file-in-ten — and every row
-carries the interpreter that read it.
+The pass reports its own success rate — `parsed 45000, failed 5000` at ten
+thousand commits, 10.0%, which is the fixture's one-file-in-ten — and every row
+carries the interpreter and the analyzer that produced it.
 
 ## Project structure
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its eight commands
+    cli.py          the Typer application and its nine commands
     analysis.py     running an analysis: read the repository, write the database
     ast_pass.py     the AST pass: read every Python file version, store its structure
     cache.py        where analysis databases live
@@ -722,9 +913,10 @@ src/codearchaeology/
     timeline.py     the timeline view: rows, table, JSON
     commit.py       the single-commit view
     file.py         the single-file view: block and JSON
+    cochange.py     the co-change analysis: the statistic, the block and the JSON
     lifecycle.py    rebuilding each file's life from the stored history
     statistics.py   the numbers that summarise one file's life
-    hotspots.py     ranking files by how often they change, and its two views
+    hotspots.py     ranking living files, and the inventory of every file
     relationships.py  commits and files, read from either end
     formatting.py   small helpers shared by the two views
 tests/
@@ -732,6 +924,8 @@ tests/
     conftest.py     the fixture that hands that repository to every test
 benchmarks/
     benchmark.py    the Git operations and the AST pass, at whatever scale you ask
+    cochange_benchmark.py  the co-change analysis as the history grows
+    index_benchmark.py     what each database index buys and what it costs
 ```
 
 ## Principles
@@ -757,7 +951,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 |---|---|---|
 | v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
 | v0.2 | File lifecycle, code hotspots, and a JSON output for other programs | Done |
-| v0.3 | AST analysis, function and class evolution | Done |
+| v0.3 | AST analysis, function and class evolution, and co-change | Done |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
 | v0.5 | Developer memory — your own technical usage over time | Planned |
 | v0.6 | AI-assisted change analysis and replay | Planned |
@@ -765,10 +959,25 @@ These are not aspirations. They constrain what the code is allowed to do.
 One stage at a time. Nothing in a later stage gets designed before the earlier
 stage is stable.
 
+Each release, and what it changed, is recorded in the
+[CHANGELOG](CHANGELOG.md).
+
 ## Known limitations
 
-- `analyze` always rescans the whole history, and neither command is incremental:
-  the AST pass walks every Python file version every time it runs.
+- **Nothing is incremental yet, in either direction.** `analyze` rescans the whole
+  history and rewrites every commit, parent and file-change row — at two hundred
+  thousand commits, 85% of its time is that rewrite. The AST pass walks every
+  Python file version every time it runs: it parses nothing it has already parsed
+  and writes nothing it already stored, but it still reads every blob and every
+  stored definition back to find that out.
+- **A large repository costs real time and real memory.** The first `ast` over a
+  two-hundred-thousand-commit history takes about thirteen minutes, holds about
+  four gigabytes, and produces a two-gigabyte database. Smaller histories are
+  proportionally smaller on every axis: a hundred thousand commits is about seven
+  minutes, two gigabytes and one gigabyte of database.
+- **The structure layer is about eight times the size of the Git facts it comes
+  from**, because it is a snapshot rather than a change log: every definition of
+  every version is stored, not only the ones that changed.
 - `--limit` only affects what is printed: the whole history is read from the
   database before it is sliced.
 - Merge commits are stored with their parents but with no file changes, because
@@ -790,6 +999,8 @@ stage is stable.
   warns about this on stderr.
 - `commit` accepts shas and sha prefixes only, not refs such as `HEAD` or a
   branch name.
+- `commit` has no JSON form, so a program that wants one commit's facts has to
+  parse the block. The other six reading commands take `--json`.
 - The database is keyed on the repository's absolute path, so moving or renaming
   a repository means analyzing it again.
 - The structure layer reads Python only, and a definition is identified by its
@@ -801,12 +1012,21 @@ stage is stable.
   parser's words, and never as a file that held nothing. Its definitions are
   unknown until a version that parses, and none of them is reported as deleted on
   the strength of the failure.
-- A second `ast` run parses nothing and reuses every version it already read, but
-  still reads each version back and compares it, so it costs nearly as much as
-  the first: 374s against 405s at a hundred thousand commits.
-- Every stored row carries the version of Python that read it, so a database
-  written by 3.11 and read by 3.13 has those versions read again rather than the
-  two interpreters' results being mixed.
+- **A co-change score is a statistic about commits, not a statement about the
+  code.** It is the share of one file's commits that touched another, it is not
+  symmetric, and two files moving together is not evidence that either one
+  depends on the other. A commit touching more files than `--large-commit-limit`
+  (100 by default) is left out of every sample, and pairs sharing fewer than
+  `--min-shared` commits (2 by default) are hidden; both counts are reported, so
+  an excluded commit and an unshown pair never read as "nothing found".
+- A second `ast` run parses nothing, writes nothing, and still reads every blob
+  and every stored definition back to compare them, so it costs about a third of
+  the first run: 110s against 395s at a hundred thousand commits.
+- Every stored row carries the version of Python that read it *and* the version
+  of the analyzer that compared it, so a database written by an older interpreter
+  or an older analyzer has those versions read again rather than two producers'
+  results being mixed. Changing how a definition is rendered or compared
+  therefore invalidates every stored row, and the next `ast` re-parses it.
 - A definition is compared by its own structure, not by where it sits, so a
   function that only moved down its file is `unchanged`.
 - Tested on Linux and Windows, on Python 3.11 and 3.13, by CI. macOS is untested.
