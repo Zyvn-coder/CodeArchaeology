@@ -22,6 +22,13 @@ form.
 
 ## Where the project stands
 
+**v0.4 has begun, in documents.** Two units are written: `docs/v0.4-problem-definition.md`
+fixes the question — one commit, what happened and which candidate reasons the
+evidence supports — and `docs/v0.4-evidence-contract.md` freezes what the model may
+see, item by item, as Fact, Inference or Unknown. No code, no command and no schema
+change: the design freeze is the next unit, and it still needs the provider, the
+no-AI path, the CI story, the output shape and the storage question answered.
+
 **v0.3.1 is released.** The tag is at `c2d5b97` and its CI run is green on all
 four jobs; the GitHub Release carries the notes. The first push of the release was
 red on Windows, and what it found was a real defect rather than a bad block (trap
@@ -665,6 +672,8 @@ now says the limit is on language, not on when to start.
 | The tool writes UTF-8 when its output is not a terminal | Trap 35's fix, and the reason is the fact that produced it: a pipe carries the machine's ANSI code page, and this tool's output is not written in it. A console is left alone — Python's console layer is already UTF-8, and rich knows how to draw on the consoles that are not — so the change reaches exactly the streams that were broken, and a redirect or a pipe now gets the output the READMEs document instead of an ASCII-degraded version that dies on the first non-ASCII character. `stream.isatty()` decides, `reconfigure(encoding="utf-8")` does it, and a stream that cannot be reconfigured keeps the encoding it has rather than refusing to run. |
 | The two design freezes keep their `v0.4-` names | **The user's call**, after the mismatch was pointed out: `docs/v0.4-cochange-design.md` and `docs/v0.4-files-semantics-design.md` describe work that shipped in v0.3.1, and their names say v0.4. Seven references point at them (one of them a test that opens the file by path), so renaming is cheap but not free; the user chose to leave them. The names are a known inaccuracy, not a drift nobody noticed. |
 | A CHANGELOG is kept, and it is the fifth place the version is written down | **The user asked for one**, after the freeze audit left the choice open (a file, or a note that the project has none by design). It opens with the newest release, and `tests/test_cli.py` now holds that heading to `__version__`, so a version bump without a section — or a section for a version the tree is not — fails the suite. Its 0.3.1 section is dated 2026-10-01, the release commit's date; the tag follows a green CI run on that commit, which is the rule every release here follows. v0.1.0 gets a section even though it was never tagged, because the first pushed state is part of the history a reader is catching up on. The two READMEs link it from the roadmap, which is where releases are discussed. |
+| A statistic's value is a fact; what it means is an inference | **The user's Unit 2 rule, applied where it was about to be got wrong.** The evidence contract classifies co-change as a fact, and at the level of its value that is right: "this file and `app.py` appeared together in 7 of this file's 9 analyzed commits" is arithmetic over stored rows, and the same number comes back every time. At the level of its meaning it is not: "these two files are related", "changing one usually means changing the other", "this commit touched both because they belong together" are readings over the file's *whole life*, not facts about this commit, and co-change is a correlation and not a cause. The same split holds for line counts, change frequency and definition counts. So the bundle carries the value **with its denominator**, and any reading of it is the model's and must be marked as one. This is what "never mix Evidence and Interpretation" means concretely: one item, two levels, and the seam is in the structure rather than in the wording. |
+| The diff is contract-available, bounded, and its bound is printed rather than applied silently | The one row of the evidence contract that does not exist yet. `commit_files` stores counts, not text, and nothing in `src/` calls `difflib` or `git diff` — the tool runs `git log` and `git cat-file --batch` and no other git command. It is obtainable: the reader resolves `<commit>:<path>` and returns the bytes, so the two sides of a change can be read. But it is new work, and it is the only item in the contract whose size is unbounded — a lockfile, a vendored copy or a generated file can produce a diff of hundreds of thousands of lines inside a commit that is otherwise three lines of real change. A model reasoning over a silently truncated diff believes it has seen the whole change, which is the mixing failure of the contract's §1 in its most dangerous form. The bound is therefore stated in the bundle; what the bound *is* stays the freeze's to set, and so does whether the first version ships the diff at all. |
 
 ## Traps already found
 
@@ -963,6 +972,20 @@ now says the limit is on language, not on when to start.
     cheapest way to have that machine. **A test that runs the tool through a pipe
     is testing an environment as well as a behaviour**, and an environment has an
     encoding.
+36. **An empty changed-file list is not an empty change.** *Measured* on a
+    purpose-built repository: a merge commit is stored with its message, its
+    author, its date and **both parents**, and with **zero rows in
+    `commit_files`**, because `git log --raw --numstat` prints no diff for a
+    merge. The fact is old — co-change's decision row records it — but the reader
+    is new. Until now every consumer of that emptiness was a query layer that
+    knew about merges; the AI layer is a reader that does not, and handed an
+    empty file list it will say "this commit changed nothing", which is the same
+    failure as printing an empty listing for a version nobody could read. The
+    bundle labels it — "a merge, where git reports no diff" — as one of four
+    absences that must stay four sentences. The second half of the measurement is
+    that the merge's diff is recomputable **only because the parents are
+    stored**: that is a capability to be named in the contract, not one the
+    bundle has for free.
 
 ## Environment notes
 
