@@ -1,6 +1,6 @@
 [project]
 name = "codearchaeology"
-version = "0.3.1"
+version = "0.4.0"
 description = "A time machine for understanding how code evolves."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ keywords = [
     "software-archaeology",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",

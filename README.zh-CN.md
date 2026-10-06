@@ -4,10 +4,13 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.3.1，已完成并冻结。** 下面九个命令现在就能用：v0.1 带来的三条，v0.2 的
-> `hotspots`、`files` 和 `file`，以及 v0.3 的 `ast`、`structure` 和 `cochange`。
-> v0.3.x 是什么、不是什么，写在
-> [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里。项目还没有
+> **状态：v0.4.0 已发布。** 现在有十个命令可用：v0.1 带来的三条，v0.2 的
+> `hotspots`、`files` 和 `file`，v0.3 的 `ast`、`structure` 和 `cochange`，以及 v0.4 的
+> `explain`——唯一会和模型说话的一个。v0.3.x 的证据层已冻结，它是什么、不是什么写在
+> [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里；v0.4 加了什么、由什么守住，
+> 写在 [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md) 里。**那份答案是什么、不是什么**
+> ——是对证据的解读，绝不是"当时发生了什么"的记录——固定在
+> [`docs/v0.4-problem-definition.md`](docs/v0.4-problem-definition.md) §12。项目还没有
 > 发布到 PyPI，所以暂时没有 `pip install` 可用。
 
 ## 这个项目要解决什么问题
@@ -39,7 +42,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.3.1
+archaeology 0.4.0
 ```
 
 ## 用法
@@ -47,10 +50,10 @@ archaeology 0.3.1
 所有命令都接受一个"仓库内的目录"作为参数，默认是当前目录。**它们都不会往被分析的
 仓库里写任何东西**——分析结果写进你缓存目录里的数据库。
 
-读侧的命令——`timeline`、`hotspots`、`files`、`file`、`structure`、`cochange`——支持
-`--json`，用同样的字段名把同样的事实输出给别的程序读。stdout 上只有 JSON——「分析结果
-已过期」的提示走 stderr——所以无论快照是不是最新的，输出都能被解析。`commit` 目前还没有
-JSON 形式；两个写入方 `analyze` 和 `ast` 打印的是这次做了什么。
+读侧的命令——`timeline`、`hotspots`、`files`、`file`、`structure`、`cochange`、
+`explain`——支持 `--json`，用同样的字段名把同样的事实输出给别的程序读。stdout 上只有
+JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是最新的，输出都能被解析。
+`commit` 目前还没有 JSON 形式；两个写入方 `analyze` 和 `ast` 打印的是这次做了什么。
 
 ### 分析一个仓库
 
@@ -707,6 +710,140 @@ $ archaeology cochange core/app.py --min-shared 1 --json
 co-change 是**关于提交的统计**，而块里那句话说清了它不是什么：两个文件一起动不是依赖关系，
 共享一次提交也不是依赖的证据。它是一个该去看一眼的地方，不是一个可以下的结论。
 
+### 解释一个提交
+
+`explain` 是唯一会和模型说话的命令。它把一个提交的证据——其他命令读的全部东西，收成一份
+bundle——组装起来，并在配置了模型时让它写出来。
+
+**没有模型时它直接打印证据本身。**这是一个能用的答案，不是错误：这个工具首先是本地分析器，
+模型是加在它上面的东西。
+
+```console
+$ archaeology explain 8eaff71d
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": {
+    "sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+...
+  "absences": [],
+  "bounds": {
+    "co_change_partners": 5,
+    "co_change_files": 5,
+    "co_change_files_omitted": 0,
+    "history_commits": 5,
+    "history_commits_omitted": 0
+  }
+}
+```
+
+bundle 里装着：这个提交、它碰过的文件**以及改动落在这些文件的哪些行**（`ranges`，从 git
+读出来——这是数据库里没有的那一样东西）、每个文件的一生、这次提交创建/修改/结束的
+definitions、通常和这些文件一起变的文件、更早碰过它们的提交，以及一份"读不出来的是什么"
+的清单。`bounds` 说明被截断的是什么，所以一个漏掉行的上下文不会读起来像完整的。
+
+**大到发不出去的提交，只会为模型做裁剪，不会为别的任何东西裁剪。**bundle 本身刻意不设上限
+——文件列表提前截断会藏起被问的那个问题的答案，而读者可以往下翻——所以一个碰了一千个文件的
+提交大约有 297,000 个估算 token。发给模型的是它的一份选样：最大的那些文件改动和 definitions、
+这些文件各自的一生、各自最近的两条更早提交，以及每处改动最初的几段行范围。凡是丢过行的列表
+都会说丢了多少行，写在提示词里的 `selection` 块中；行范围被裁过的文件会在自己那一行带上
+`ranges_total`，所以一份残缺的证据不会读起来像完整的。这个命令打印的证据仍然是完整的，
+`explain --json` 仍然带着全部，而答案是拿模型**实际看到的**去校验的——引用一个被丢掉的行的
+答案会被拒绝，即使工具手里确实有它。实测：`benchmarks/context_benchmark.py` 里最宽的那个形状
+——两百个文件、每个二十处 hunk 和十个 definitions——发出去约 11,000 token，而 bundle 是
+358,000。
+
+要让模型把它写出来，指定端点和模型：
+
+```bash
+export CODEARCHAEOLOGY_AI_BASE_URL=https://api.openai.com/v1
+export CODEARCHAEOLOGY_AI_MODEL=gpt-4o-mini
+export CODEARCHAEOLOGY_AI_API_KEY=...        # 或 OPENAI_API_KEY
+```
+
+端点需要说 OpenAI 的 chat 形状，而 OpenAI、DeepSeek、Ollama、vLLM 和 LM Studio 说的都是
+这一种——把 `CODEARCHAEOLOGY_AI_BASE_URL` 指向本机 Ollama 就是完全本地的用法，不需要单独
+的代码路径。密钥只从环境变量读，绝不做命令行参数，也绝不会出现在错误消息里。
+
+其余设置同样是环境变量，没有配置文件：第二处放设置的地方，就是第二处可能不一致的地方。
+
+| 变量 | 含义 | 默认 |
+|---|---|---|
+| `CODEARCHAEOLOGY_AI_BASE_URL` | 端点 | 无——要用模型就必须给 |
+| `CODEARCHAEOLOGY_AI_MODEL` | 要问的模型 | 无——要用模型就必须给 |
+| `CODEARCHAEOLOGY_AI_API_KEY` | 密钥，作为 bearer token 发送 | 回退到 `OPENAI_API_KEY` |
+| `CODEARCHAEOLOGY_AI_TIMEOUT` | 单次调用整段的墙钟截止时间，秒 | 60 |
+| `CODEARCHAEOLOGY_AI_MAX_RETRIES` | 首次之后的尝试次数，只用在重复能解决的失败上 | 2 |
+| `CODEARCHAEOLOGY_AI_MAX_CONTEXT_TOKENS` | 发送内容的上限 | 无——超过就拒绝，而不是截断 |
+| `CODEARCHAEOLOGY_AI_MAX_OUTPUT_TOKENS` | 答案的上限 | 无——被它截断的答案报告为"被截断"，不是"格式错误" |
+
+截止时间是围绕整次调用的墙钟时间，不是 socket 超时，所以一个每次只吐一个字节的端点也会被结束。
+重试覆盖连接与 DNS 失败、读超时、`429` 和 `5xx`；其余 `4xx` 是请求或密钥不对，重复它只会花你
+的钱再失败一次。
+
+答案分三个标题展示，而这三个标题就是读者分辨哪部分是哪种东西的全部依据：
+
+- **Observed**（观察到）——证据里有的东西。每一行都引用 bundle，而引用了 bundle 里没有
+  的东西会被拒绝，而不是被展示。
+- **Possible**（可能）——候选原因，每一条都点名它依据的 observed changes。每条下面那个
+  数字是有多少证据，不是这个理由有多好；它由工具数出来，从不由模型自报。
+- **Unknown**（未知）——读不出来的，或者根本不在仓库里的。
+
+**文本块开头第一句就说清它整份是什么：对证据的解读，不是"当时发生了什么"的记录。**这是
+这一层要守的契约，也是读者需要在读到第一条论断**之前**就知道的那件事——一份关于某个提交的
+答案，读起来很像那个提交的记录，而它不是。这个区别不是对模型水平的谦虚，而是工具真正能校验
+的东西：引用是事实，引用周围的句子是解读，开头那句说明了哪一半被验证过。一句落在自己引用的
+证据之内、却仍然把话说过了头的句子，程序抓不住——所以这句话是印出来的，而不是留给读者自己
+判断。同一个提交解释两次，可能得到两份不同的解释，这就是"解读"的含义；两次之间必须完全一致
+的是证据，不是文字。
+
+**每一条结论都会把它依据的东西展开印出来**：提交、文件、改动落在的哪些行、碰到的
+definitions、和它们一起变的文件、以及缺失项。引用会印在使用它的那条结论下面，也会再印一遍
+在建立于其上的候选原因下面，所以读者永远不必顺着 id 回到 JSON 里去查某句话是凭什么说的。
+**候选原因可以是错的；它做不到的，是让读者看不见它站在什么上面。**
+
+一条引用可以命名六种东西之一，每一种都是拿 bundle 去核对的，而不是核对它的形状：`commit`、
+`file`、`definition`、`range`（diff 真正落下的行段）、`cochange`（一对的一个方向，因为这个
+统计量不是对称的）、`absence`。引用**能承载这个断言的最窄的那样东西**——是行段而不是整个
+文件，是那一对而不是"这些文件"——这才是答案可被核对的前提。
+
+**而候选原因会被标明它是什么。** 候选下面有一句话说明：解读不是发现——一起动不是依赖，一个
+definition 出现或改变也不是关于作者意图的陈述——而一条**全部依据都只是共变统计**的候选，会在
+自己那一行上说明这一点。一句话拦不住一个存心误导的模型；它拦的是**读者把候选当成发现**，
+而这才是这一层真正能防住的那种失败。工具断然拒绝什么、只是标注什么、以及**根本抓不住**什么，
+写在 `tests/test_boundaries.py` 里，模型每一种出错方式一节。
+
+**模型永远不会被问作者为什么这么改**，因为证据里没有它，也没有任何措辞能让它变得可得。
+候选原因就是候选，它绝不会被印在 summary 里——在那里一句猜测会被读成发现。违反这些规则的
+答案会被再要一次，然后整份拒绝：什么都不展示，因为一份带注释的半截解释比没有更糟。
+
+`--json` 把同一份答案交给程序。stdout 只有文档本身，所有提示和错误都走 stderr，所以调用方
+不用先过滤就能解析 stdout。当提交大到发不出去时，文档会在证据旁边多一个 `selection`：证据
+仍然是完整的全部，而这个键说明模型看到了其中多少。
+
+```console
+$ archaeology explain 8eaff71d --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+...
+      "co_change_partners": 5,
+      "co_change_files": 5,
+      "co_change_files_omitted": 0,
+      "history_commits": 5,
+      "history_commits_omitted": 0
+    }
+  }
+}
+```
+
+**两种状态同一个形状，由 `state` 说明是哪一种。** 没有模型时就没有解释，证据就是答案——所以
+`state` 是 `evidence_only`，`explanation` 为 null。一个必须先搞清自己拿到哪种的读者，就是会
+出错的读者，这和 `file --json` 永远是一个装着列表的对象是同一个理由。证据和答案并排放在一起，
+所以不必再调一次就能互相核对；JSON 里的 `confidence` 是工具数出来的那个数，不是模型自己选的。
+
 ### 重新跑 `analyze` 不会把结构清掉
 
 `analyze` 和 `ast` 写的是不同的表，而 `analyze` 只删除 git 已经没有的东西：一次 rebase
@@ -821,7 +958,7 @@ $ uv run python benchmarks/benchmark.py --commits 10000 50000 100000 200000
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与九个命令
+    cli.py          Typer 应用与十个命令
     analysis.py     一次分析：读仓库、写数据库
     ast_pass.py     AST 这一趟：读每个 Python 文件版本，存下它的结构
     cache.py        分析数据库放在哪
@@ -839,6 +976,11 @@ src/codearchaeology/
     statistics.py   汇总一个文件一辈子的那些数字
     hotspots.py     给活着的文件排名，以及列出每个文件的清单
     relationships.py 提交与文件的关系，从任一端都能读
+    context.py      一个提交的证据，构建时模型完全不参与
+    selection.py    证据大到发不出去时，模型看到其中的哪些
+    explanation.py  答案的形状、给模型的指令，以及文本块
+    validation.py   决定一份答案能不能展示的三趟检查
+    provider.py     工具里唯一被允许触网的模块
     formatting.py   两个视图共用的小工具
 tests/
     sample_repo.py  构造一个确定性的小仓库供测试使用
@@ -847,14 +989,18 @@ benchmarks/
     benchmark.py    Git 各操作与 AST 这一趟，规模由你指定
     cochange_benchmark.py  co-change 分析随历史增长的成本
     index_benchmark.py     每个数据库索引买到了什么、花了什么
+    context_benchmark.py   解释用的 bundle 有多大，按 section 拆开看
 ```
 
 ## 核心原则
 
-以下六条不是口号，它们约束代码被允许怎么写。
+以下七条不是口号，它们约束代码被允许怎么写。
 
 1. **Core First** —— 核心不能依赖 LLM。任何功能都必须能完全不用 AI 跑通。
-   AI 只是上面的一层，永远不是地基。
+   AI 只是上面的一层，永远不是地基。由 `tests/test_offline.py` 用两种方式守住：
+   每条读取命令都在"打开 socket 的所有途径被拿掉"的情况下跑一遍；并且整个包里
+   只有 `provider.py` 允许 import 网络模块——所以以后有单元在过高的层次上伸手去够
+   网络，会在构建时就失败。
 2. **Local First** —— 任何 Git 仓库都必须能在本地分析，不依赖远程服务。
 3. **Evidence First** —— 任何结论都必须能追溯到具体的 commit / diff / AST 节点。
    禁止凭空推测。
@@ -862,6 +1008,14 @@ benchmarks/
    多语言支持在路线图上，不在当前范围内。
 5. **先 CLI，后 Web** —— v0.x 的界面就是命令行，没有 Web UI。
 6. **SQLite 是唯一存储** —— v0.x 不引入 PostgreSQL / Redis / 向量数据库。
+7. **Interpretation，不是 history** —— 工具从仓库里推导出来的是事实：一个提交、一段
+   diff、一个 definition，每一样背后都有测试。而模型基于这些事实写出来的东西，是**对它们
+   的解读，绝不是"当时发生了什么"的记录**，两者永远不会被当成同一类东西呈现。证据是可
+   复现的，文字不是；结构把 Observed / Possible / Unknown 分开；每条论断都印出它依据的
+   引用；文本块开头就说明自己是什么；模型写的任何东西都不会被当成证据存下来。由
+   `tests/test_explain.py`（开头那句，以及它不出现在 JSON 里）和结构本身守住——而结构是否
+   还成立，由 `tests/test_validation.py` 和 `tests/test_boundaries.py` 看着：解读无法被伪装成
+   观察，引用不到东西的答案会被整份拒绝。完整表述在 `docs/v0.4-problem-definition.md` §12。
 
 ## 路线图
 
@@ -870,7 +1024,7 @@ benchmarks/
 | v0.1 | Git 扫描、提交历史、文件改动、SQLite 存储、CLI 时间线 | 已完成 |
 | v0.2 | 文件生命周期、代码热点，以及给别的程序读的 JSON 输出 | 已完成 |
 | v0.3 | AST 分析、函数与类的演化，以及 co-change | 已完成 |
-| v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 计划中 |
+| v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 已完成——`explain`，带 OpenAI 兼容的 provider |
 | v0.5 | Developer Memory —— 你自己的技术使用轨迹 | 计划中 |
 | v0.6 | AI 参与的改动分析与回放 | 计划中 |
 
@@ -924,6 +1078,25 @@ benchmarks/
   会重新解析。
 - 一个 definition 是按它自身的结构比较的，不是按位置：只在文件里挪了地方的函数是
   `unchanged`。
+- **`explain` 是唯一需要机器之外的东西的命令。** 没配置模型时它打印证据并以 0 退出；配置了
+  就把那份证据发给端点、把回来的东西展示出来。工具里其他任何部分都不依赖它，分析本身永远
+  不离开仓库。
+- **解释是解读，不是历史事实；它被检查的是引用，不是真伪。** 引用了 bundle 里没有的东西
+  会被整份拒绝，候选原因也被挡在 summary 之外——但一句话如果确实落在它引用的那条证据之内、
+  却把那句话说过头了，程序抓不住。文本块第一行就把这件事说了出来，而这个检查和它的限度写在
+  `docs/v0.4-explanation-schema.md` §6 与 `docs/v0.4-problem-definition.md` §12 里。
+- **模型写的东西不会被存下来。** 解释是打印出来给人读的，从不写回数据库，所以以后不会有哪条
+  命令把一条解读当成行事实读走。它是否有一天会被存下来是一个未决问题，而这就是为什么它不是一个
+  小问题。
+- `explain --json` 总会在答案旁边带上证据，但一旦配置了模型，就没有以块的形式单独查看证据的
+  开关——离线路径是唯一的入口。
+- 发给模型的东西有两重上限。选样会把一个大提交裁到它最大的那些条目——在 benchmark 造出的
+  最宽形状上约 11,000 估算 token，而那份 bundle 是 358,000——超过
+  `CODEARCHAEOLOGY_AI_MAX_CONTEXT_TOKENS` 时命令会拒绝，而不是发一份会被端点截断的证据。
+- **选样保留的是最大的改动，这是一条关于体积的规则，不是关于重要性的。** 纯改名不动任何行，
+  所以在一个大到需要裁剪的提交里它会排在文件列表最后，是最先被丢掉的；`selection` 块里的
+  计数会说明跟着它一起丢了多少行。这里没有任何东西判断一次改动*意味着*什么，这个块写出来的
+  目的就是不让读者去猜缺了什么。
 - 由 CI 在 Linux 与 Windows、Python 3.11 与 3.13 下验证；macOS 尚未验证。
 
 ## 许可证

@@ -1,9 +1,10 @@
 """Command line entry point for CodeArchaeology.
 
-Nine commands: ``analyze`` fills the database with the git history and ``ast``
+Ten commands: ``analyze`` fills the database with the git history and ``ast``
 fills it with the structure of every Python file version in that history;
 ``timeline``, ``hotspots``, ``files``, ``file``, ``commit``, ``structure`` and
-``cochange`` read it back.
+``cochange`` read it back; and ``explain`` reads it back through a model, when
+one is configured.
 """
 
 import sys
@@ -32,7 +33,11 @@ from codearchaeology.cochange import build_json as build_cochange_json
 from codearchaeology.cochange import build_table as build_cochange_table
 from codearchaeology.cochange import load_cochange_commits
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
+from codearchaeology.context import build_context
+from codearchaeology.context import build_json as build_context_json
 from codearchaeology.definition_history import load_histories
+from codearchaeology.explanation import build_json as build_explanation_json
+from codearchaeology.explanation import build_prompt, render
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
@@ -43,6 +48,14 @@ from codearchaeology.hotspots import build_inventory_table as build_files_table
 from codearchaeology.hotspots import build_json as build_hotspots_json
 from codearchaeology.hotspots import rank_hotspots
 from codearchaeology.lifecycle import load_lifecycles
+from codearchaeology.provider import (
+    BASE_URL_VARIABLE,
+    MODEL_VARIABLE,
+    OpenAICompatibleProvider,
+    ProviderError,
+    Settings,
+)
+from codearchaeology.selection import build_view
 from codearchaeology.structure import (
     build_history,
     build_history_json,
@@ -54,6 +67,7 @@ from codearchaeology.structure import (
     select_version,
 )
 from codearchaeology.timeline import build_table, load_timeline
+from codearchaeology.validation import ExplanationError, validate
 
 app = typer.Typer(
     name="archaeology",
@@ -639,4 +653,93 @@ def cochange(
         "The score is the share of this file's analyzed commits that touched"
         " the other file. Moving together is not a dependency, and a shared"
         " commit is not evidence of one."
+    )
+
+
+NO_PROVIDER_NOTE = (
+    "No model is configured, so this is the evidence itself."
+    f" Set {BASE_URL_VARIABLE} and {MODEL_VARIABLE} to have one explained."
+)
+
+
+@app.command()
+def explain(
+    sha: str = typer.Argument(..., help="Commit to explain. A prefix is enough."),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Explain what one commit did, from the evidence the tool holds.
+
+    The answer is an interpretation of that evidence and never a record of what
+    happened: every claim carries the citations it rests on, the citations are
+    checked against the bundle, and the block opens by saying so. With no model
+    configured the evidence itself is printed instead, which is the same bundle
+    the model would have been shown.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        context = build_context(repository_root, database, sha)
+    except (GitError, AnalysisError, CommitNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_behind(repository_root, database)
+
+    settings = Settings.from_environment()
+
+    if settings is None:
+        # Core First: with no model the evidence is still the answer, and the
+        # command still succeeds. The note goes to stderr so that what a program
+        # reads stays the evidence alone.
+        typer.echo(NO_PROVIDER_NOTE, err=True)
+        typer.echo(
+            build_explanation_json(None, context)
+            if as_json
+            else build_context_json(context)
+        )
+        return
+
+    # What the model is shown: the bundle itself when it fits, and a stated
+    # selection of its largest entries when the commit is too large to send
+    # whole. The evidence stays the bundle either way — printed with no model,
+    # carried whole by --json, and the thing a citation is read beside.
+    view = build_view(context)
+    if view.note is not None:
+        typer.echo(view.note, err=True)
+
+    provider = OpenAICompatibleProvider(settings)
+    prompt = build_prompt(view.json)
+
+    try:
+        # Checked against the view rather than the bundle: a citation of a row
+        # the model never saw is refused, because an answer has to rest on what
+        # it was given and not on something that happens to be true elsewhere.
+        explanation = validate(provider.explain(prompt), view.context)
+    except ProviderError as error:
+        # The call never produced an answer. Repeating is the provider's own
+        # business, and it has already done as much of it as its settings allow.
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+    except ExplanationError as error:
+        # The model spoke and what it said was unusable. That is worth asking
+        # once more and no further: a second failure of the same kind is not a
+        # transient condition, and every attempt is paid for.
+        try:
+            explanation = validate(provider.explain(prompt), view.context)
+        except (ProviderError, ExplanationError) as second:
+            typer.echo(f"Error: {second}", err=True)
+            typer.echo(
+                "The answer was not shown: a part of it did not check out, and"
+                " printing the rest would present it as a whole one.",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
+
+    typer.echo(
+        build_explanation_json(explanation, context, view.selection)
+        if as_json
+        else render(explanation)
     )

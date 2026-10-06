@@ -42,6 +42,31 @@ from codearchaeology.analysis import analyze
 from codearchaeology.ast_pass import run_ast_pass
 from codearchaeology.cache import database_path
 from codearchaeology.cli import app
+from codearchaeology.provider import (
+    BASE_URL_VARIABLE,
+    CONTEXT_LIMIT_VARIABLE,
+    FALLBACK_KEY_VARIABLE,
+    KEY_VARIABLE,
+    MODEL_VARIABLE,
+    OUTPUT_LIMIT_VARIABLE,
+    RETRIES_VARIABLE,
+    TIMEOUT_VARIABLE,
+)
+
+# Every variable that decides whether `explain` talks to a model. The checker
+# takes them all out of the child environment, so the block that shows the
+# offline path shows it on every machine rather than only on one with no
+# endpoint configured.
+AI_VARIABLES = (
+    BASE_URL_VARIABLE,
+    MODEL_VARIABLE,
+    KEY_VARIABLE,
+    FALLBACK_KEY_VARIABLE,
+    TIMEOUT_VARIABLE,
+    RETRIES_VARIABLE,
+    CONTEXT_LIMIT_VARIABLE,
+    OUTPUT_LIMIT_VARIABLE,
+)
 from sample_repo import (
     APP_AFTER,
     LATER_DATE,
@@ -132,6 +157,15 @@ class Scenario:
             # would otherwise fall back to 80 and truncate every message column.
             COLUMNS="110",
         )
+        # The blocks show the offline path, and it is the only one that can be
+        # replayed: a model's answer is not the same twice, and a block that
+        # promised one would be a block that fails on a busy day. A developer
+        # with an endpoint configured would otherwise see the online path here —
+        # the block would fail on their machine and nowhere else, which is the
+        # worst kind of red.
+        for name in AI_VARIABLES:
+            environment.pop(name, None)
+
         return subprocess.run(
             ["uv", "run", "archaeology", *arguments[1:]],
             # Inside the repository, because the blocks that carry no path —
@@ -264,6 +298,10 @@ def _scenario_for(body: str) -> str:
     if body.startswith("$ archaeology ast"):
         return "analyzed"
     if body.startswith("$ archaeology structure"):
+        return "analyzed_and_read"
+    if body.startswith("$ archaeology explain"):
+        # The bundle carries the definitions this commit changed, so the block
+        # is written against a history the AST pass has already read.
         return "analyzed_and_read"
     return "analyzed"
 

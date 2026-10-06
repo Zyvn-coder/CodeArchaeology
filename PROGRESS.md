@@ -10,24 +10,79 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-01. v0.3.x is frozen and released: `v0.3.1` is tagged at
-`c2d5b97` with a GitHub Release, `main` is pushed, and
-`docs/v0.3-final-state.md` is the record.** Both READMEs document all nine
-commands, `CHANGELOG.md` is the fifth place the version is written down, the pass
-no longer writes a row it already stored, and the AST reuse path records which
-analyzer produced each row. The release's first push is part of the story: the
-Windows jobs found the tool's output encoding (trap 35), and the tag went on the
-fix rather than on the commit that failed. Open on purpose: `commit` has no JSON
-form.
+**Last updated: 2026-10-06. v0.4 is built and release-ready: `docs/v0.4-final-state.md`
+is the record, the version is 0.4.0 in the five places the suite compares, and the
+twelve-check release audit is below.** The tag is not made yet, and the release
+order is the reason it is not: commit → push → all four CI jobs green **on that
+commit** → tag → GitHub Release. The whole v0.4 tree has not been through CI at
+all, so its first push is the first time it meets the Windows runners. Open on
+purpose: `commit` has no JSON form, and the three v0.4 questions — whether an
+explanation is ever stored, whether the prompt gets a unit of its own, and how the
+evidence alone is read once a model is configured.
+
+## The v0.4 release audit, 2026-10-06
+
+Unit 14. Twelve checks, each run rather than assumed. What each one was run with,
+and what it found:
+
+| Check | Run with | Found |
+|---|---|---|
+| Core tests | `uv run pytest` | **660 green**, 160s locally |
+| AI tests | the seven AI-layer files, counted per file | **183** of the 660 (`context` 26, `provider` 33, `explain` 31, `validation` 47, `boundaries` 13, `offline` 15, `selection` 18) |
+| CLI tests | `test_cli`, `test_readme` | ten commands registered, every one documented in both READMEs, 55 block-replay tests green |
+| JSON contract | **every reading command run end to end** over a fixture repository, output parsed | eight commands emit parseable JSON with their documented top-level keys; `commit --json` is refused with `No such option: --json`, which is the gap the READMEs already state |
+| Provenance | `test_explain` (the expanded-citation tests), `test_validation` | every claim carries citations, and a citation is held against **what the model was shown** — a left-out row is refused even though the bundle holds it |
+| Hallucination boundaries | `test_boundaries` | 13 tests, seven failure modes, each with the honest verdict: refused, marked, or not catchable |
+| Provider failure | `test_provider`, and the command-level failure tests in `test_explain` | deadline, retries, rate limit, model unavailable, non-completion body, oversized response, wrong base URL, zero timeout — all end in a sentence rather than a traceback |
+| no-AI Core | `test_offline` | held twice: `provider.py` is the only module importing a networking one, and every reading command runs with `socket.socket`, `create_connection` and `getaddrinfo` taken away |
+| Documentation | both READMEs, `CHANGELOG.md`, `docs/`, `explain --help` | the interpretation contract stated in five places and pointing at one; `docs/v0.4-final-state.md` is the release record |
+| Version | the five copies `tests/test_cli.py` compares | **0.4.0** in `pyproject.toml`, `__version__`, both READMEs and the CHANGELOG's newest section |
+| CI | `gh run list` | the last pushed commit is green on all four jobs; **the v0.4 tree has never been pushed**, so it has never been through CI |
+| Release tag | `git tag -l` | `v0.3.1` is the newest; `v0.4.0` does not exist yet, and the release order says it goes on a commit whose own CI is green |
+
+Two things the audit is worth keeping for, beyond the twelve rows:
+
+- **The JSON contract had never been checked end to end.** Every command's JSON
+  has unit tests, and the README blocks are replayed, but nothing had run all
+  eight reading commands against one repository and parsed what came out. It does
+  now, by hand, and the one failure is the documented gap rather than a surprise.
+- **CI is the one check that cannot be done locally**, and it is the one that
+  found a real defect in the last release (trap 35: a Windows pipe carries the
+  machine's ANSI code page). The v0.4 tree — 25 changed or new files, five of them
+  modules — has never been run by the Windows runner, which is exactly why the
+  release order puts the tag after the green run rather than before it.
 
 ## Where the project stands
 
-**v0.4 has begun, in documents.** Two units are written: `docs/v0.4-problem-definition.md`
+**v0.4 has begun, in documents.** Fourteen units are written: `docs/v0.4-problem-definition.md`
 fixes the question — one commit, what happened and which candidate reasons the
-evidence supports — and `docs/v0.4-evidence-contract.md` freezes what the model may
-see, item by item, as Fact, Inference or Unknown. No code, no command and no schema
-change: the design freeze is the next unit, and it still needs the provider, the
-no-AI path, the CI story, the output shape and the storage question answered.
+evidence supports — and §12 fixes what the answer *is*, an interpretation of the
+evidence and not a historical fact, which is the contract the whole phase is held
+to; `docs/v0.4-evidence-contract.md` freezes what the model may see,
+item by item, as Fact, Inference or Unknown; `docs/v0.4-explanation-schema.md`
+freezes the shape of the answer, in which Observed, Possible and Unknown are kept
+apart by the structure rather than by the wording; `docs/v0.4-ai-architecture-freeze.md`
+puts the model behind one interface, in one module, and decides the key, the deadline,
+the retries, the two failure kinds and the token limits; `context.py` is the
+deterministic evidence bundle; `provider.py` with `explanation.py` and the `explain`
+command are the pipeline that turns it into an answer; `validation.py` is the pass
+that decides whether that answer may be shown; `explain --json` is the same answer
+for a program; every claim prints the evidence it rests on, cited down to the span
+of a diff and the direction of a co-change pair; `tests/test_boundaries.py` is the
+seven ways a model can be wrong, one section each, with the honest verdict for every
+one; `tests/test_offline.py` holds the core's independence from the network,
+structurally and by running every reading command with no socket available; and
+`selection.py` with `docs/v0.4-context-budget.md` is what the model is shown when
+the commit is too large to send whole — measured first (373,000 estimated tokens
+for a thousand-file commit), reduced for the model and for nobody else, with every
+dropped row counted in the prompt; Unit 13 states the contract everywhere a
+reader meets it — §12 of the problem definition, a seventh README principle in
+both languages, `explain --help`, the CHANGELOG, and the first line of the block
+the model's answer is printed in; and Unit 14 is the release audit and the release
+record, `docs/v0.4-final-state.md`. The tree is at 660 tests and the version is
+0.4.0. Still open: no flag for the evidence alone in the block form once a model
+is configured, no prompt unit, and the question of whether an explanation is ever
+stored.
 
 **v0.3.1 is released.** The tag is at `c2d5b97` and its CI run is green on all
 four jobs; the GitHub Release carries the notes. The first push of the release was
@@ -674,6 +729,50 @@ now says the limit is on language, not on when to start.
 | A CHANGELOG is kept, and it is the fifth place the version is written down | **The user asked for one**, after the freeze audit left the choice open (a file, or a note that the project has none by design). It opens with the newest release, and `tests/test_cli.py` now holds that heading to `__version__`, so a version bump without a section — or a section for a version the tree is not — fails the suite. Its 0.3.1 section is dated 2026-10-01, the release commit's date; the tag follows a green CI run on that commit, which is the rule every release here follows. v0.1.0 gets a section even though it was never tagged, because the first pushed state is part of the history a reader is catching up on. The two READMEs link it from the roadmap, which is where releases are discussed. |
 | A statistic's value is a fact; what it means is an inference | **The user's Unit 2 rule, applied where it was about to be got wrong.** The evidence contract classifies co-change as a fact, and at the level of its value that is right: "this file and `app.py` appeared together in 7 of this file's 9 analyzed commits" is arithmetic over stored rows, and the same number comes back every time. At the level of its meaning it is not: "these two files are related", "changing one usually means changing the other", "this commit touched both because they belong together" are readings over the file's *whole life*, not facts about this commit, and co-change is a correlation and not a cause. The same split holds for line counts, change frequency and definition counts. So the bundle carries the value **with its denominator**, and any reading of it is the model's and must be marked as one. This is what "never mix Evidence and Interpretation" means concretely: one item, two levels, and the seam is in the structure rather than in the wording. |
 | The diff is contract-available, bounded, and its bound is printed rather than applied silently | The one row of the evidence contract that does not exist yet. `commit_files` stores counts, not text, and nothing in `src/` calls `difflib` or `git diff` — the tool runs `git log` and `git cat-file --batch` and no other git command. It is obtainable: the reader resolves `<commit>:<path>` and returns the bytes, so the two sides of a change can be read. But it is new work, and it is the only item in the contract whose size is unbounded — a lockfile, a vendored copy or a generated file can produce a diff of hundreds of thousands of lines inside a commit that is otherwise three lines of real change. A model reasoning over a silently truncated diff believes it has seen the whole change, which is the mixing failure of the contract's §1 in its most dangerous form. The bound is therefore stated in the bundle; what the bound *is* stays the freeze's to set, and so does whether the first version ships the diff at all. |
+| The output's three words are the evidence contract's three words | **Observed / Possible / Unknown** in the explanation schema, **Fact / Inference / Unknown** in the evidence contract — one idea under two names, mapped explicitly in `docs/v0.4-explanation-schema.md` §2 so the two documents cannot drift into two vocabularies for the same thing. The output's word is the more careful of the two, which is why it is the one the user reaches for: *Fact* claims something about the world, while *Observed* claims only that the tool saw it in the data, and that is all the tool can honestly say. |
+| `confidence` is derived by the tool, never reported by the model | **The user's Unit 3 ruling, option B of three.** A model-emitted confidence is the model's own assessment of its answer: not in the bundle, not derivable from it, and not the same number twice — while Evidence First requires every conclusion to trace to a commit, a diff or an AST node. It is also the purest form of the mixing failure, because a number *reads* as the most authoritative thing in the answer and would be the least supported. So the field holds how many observed changes a candidate rests on and which commits they came from, and the tool fills it in from `based_on`: a field the model cannot write is a field the model cannot inflate. It is per candidate, not one number for the answer, because a top-level score averages a well-supported candidate together with a weak one into a number that describes neither. What it measures is how much evidence there is, not how good the reason is, and the rendering has to say so in as many words — the same shape as `files`' closing sentence about deleted rows. The two options not taken, and why, are in the schema's §8, so a later unit argues with a reason rather than re-adding one quietly. |
+| A provider returns text; parsing, validating and `confidence` belong to the core | The interface is one method, `explain(context) -> str`, and its narrowness is the design. A provider that parsed its own JSON would be one that could quietly disagree with the others about what a valid answer is, and the schema check would be re-implemented once per adapter. Returning text means a new provider implements "reach a model and hand back what it said" and inherits every rule in the explanation schema for free. It also splits the failure kinds cleanly: anything that stopped the provider getting an answer is the provider's to raise, and anything wrong with the answer is the core's to find. |
+| The network appears in exactly one module, and the offline path prints exactly what the model is shown | Core First made structural rather than promised: everything above the provider line — all of v0.1 to v0.3, the evidence builder and the context — runs with no networking module in the import graph, so the offline path works on a machine with no network, no key and no provider configured. The second half is what keeps the two paths from drifting: the offline output is the same bytes the model is shown, under the same headings, so a reader can put an answer beside its input and a change to the bundle shows up in both places or in neither. Held the way `definitions.py` already holds its own boundary — a test reads the module's source and refuses an import outside the allowed set — so a later unit reaching for `urllib` one layer too high fails the build. |
+| The API key is environment-only, and the error path scrubs it | `CODEARCHAEOLOGY_AI_API_KEY`, falling back to `OPENAI_API_KEY` so a machine already configured for another tool needs no second copy. Never a flag: a flag is visible in the shell's history and in the process list, and a key in either has to be rotated. Never stored, bundled or printed — and the printing is the one that is not theoretical, because a provider that echoes the failed request puts the key in a traceback, so the message is scrubbed before it is built and a test asserts that it is. |
+| The timeout is a deadline, not a socket timeout | `urllib.request`'s `timeout=` fires per read operation, so a provider dribbling a byte every 30 seconds keeps it from ever firing while the command hangs for an hour. The default is 60 seconds of wall clock around the whole call, and when it expires the message names the deadline and the endpoint. Someone "simplifying" this back to `urlopen(timeout=...)` would restore the hang, which is why the reason is recorded rather than left in a comment. |
+| Retry is 2 attempts after the first, exponential, and only where repeating can help | Retryable: connection and DNS failures, a read that timed out, `429`, `5xx`. Not retryable: every other `4xx`, because those are the request or the credentials being wrong, and repeating them spends the user's money to fail identically. Backoff 1 s then 2 s, a `Retry-After` header is honoured when the provider sends one, and the failure reports how many attempts were made — "failed after 3 attempts" is a different situation from "failed", and a user deciding whether to try again needs to know which one they are in. |
+| The tool never repairs a model's answer | **The rule the two failure kinds exist to protect.** A *provider* failure is the call not producing an answer — an unreachable host, an expired deadline, a `500`, an empty body, an envelope that is not JSON — and the model never spoke. A *model* failure is the call succeeding and the answer being unusable: not JSON, the wrong shape, a candidate with an empty `based_on`, an observed change citing evidence that is not in the bundle. The second is retried **once** and no further, because a repeated failure of the same kind is not a transient condition. What the tool may never do is fix, complete, trim, re-word or drop a part of what came back: deleting a citation that names nothing and printing the rest turns a broken answer into a plausible one, which is the failure this whole layer exists to prevent. A partial answer is never printed — either the structure validates whole, or nothing is printed and the command exits non-zero, because half an explanation with a note is worse than none, the note being the part that gets skipped. |
+| A context over the token limit is refused, not truncated | The estimator is conservative (about four characters per token, and stated as the estimate it is) because the standard library has no tokeniser and shipping one would add a model-specific dependency. The decision is the refusal: letting the provider truncate is the same failure as a silently truncated diff — the model answers about a partial bundle while believing it has the whole one, and the result looks exactly like a well-supported answer. The command fails and names the size and the limit, which is the evidence contract §5 rule applied to the other end of the call. The output ceiling is set explicitly for the same reason: a generation cut at the ceiling arrives as malformed JSON, and the failure has to name the ceiling rather than blame the model. |
+| The context is deterministic, and a test holds it against a second database | The architecture freeze's promise — a change of model is a change of nothing else — is only worth making if something checks it. Two tests do: one builds the same context twice and compares the bytes, and one writes a **second** database with its own `analyze` and `ast` over the same repository and compares against that. The second is the one that matters, because it is the one that would catch an ordering that came from a dictionary, a timestamp taken from the clock, or a value that depends on when the history was read. |
+| The diff summary is where the change landed, not the diff's text | **The user's Unit 5 choice, option B of three**, and it settles the question the evidence contract §10 left open. Each file carries the new-side spans of its hunks, which is what lets a reader put the change beside the definitions it fell inside — "lines 40–60, and `refresh_token` lives at 38–62" — and it costs one `git show` for the whole commit rather than one per file. The text stays out: it is the one unbounded item in the contract, and a summary of where is enough for the link. The parser's shape comes from what git was *measured* to print rather than from what it usually prints: a path with a space is followed by a tab, a path it cannot print is quoted with octal escapes that stand for bytes (hence `core.quotePath=false`, so a Chinese name arrives as itself), a deleted file's new side is `/dev/null`, and a hunk header is `-a` or `-a,b` with either side possibly absent. Every file the diff names gets an entry even with no hunks, and a file the diff does not name gets `no_ranges_recorded` — which says nobody looked, rather than claiming there was nothing to see. |
+| The facts about this commit are not capped; the context around them is | A file list or a definition list that stopped early would hide the answer to the question being asked, so nothing about the commit itself is trimmed. Co-change and the earlier commits are context rather than the subject, so they get ceilings — five partners per file, five files asked about, five earlier commits per file — and **every ceiling is reported in `bounds`**, with the count of what it left out. That is the evidence contract §5 rule again: a context that quietly dropped rows would read exactly like a complete one. The co-change set is chosen rather than sliced: only files with enough commits for a pair to survive `min_shared` are asked about, longest-lived first, so the cap never spends a walk of the whole history to be told there is nothing to report. |
+| A file the AST layer never reads is not an absence | The AST layer reads Python and nothing else, so a PNG or a README has no stored version **by design**. Reporting it in the absence list as "no version was stored for this commit" would be a failure that never happened, in the one list a reader is meant to trust about what is missing — and the first run of the builder did exactly that, on every binary and every Markdown file a commit touched. The path stays in `changes`, where a reader can see it; what is absent is only the claim that something went wrong. |
+| One OpenAI-compatible provider ships, over the standard library | **The Unit 4 §10 recommendation, taken when Unit 6 needed a provider to exist.** One adapter reaches OpenAI, DeepSeek, Ollama, vLLM and LM Studio, because they all take the same request and answer with the same envelope — so what separates them is configuration rather than a class each, and pointing `BASE_URL` at a local Ollama is the Local First case with no code of its own. It is `urllib.request` and `json`, so the tool still has `typer` and `rich` and nothing else. The two rejected options keep their reasons in the freeze's §10, so a later unit argues with a reason rather than adding a dependency quietly. The interface is what makes this cheap to revisit: a second implementation is a drop-in, and the core has no branch anywhere that asks which one it got. |
+| `explain` with no model configured prints the evidence and exits 0 | Core First as behaviour rather than as a promise, and the form the problem definition left open. The note about what to configure goes to stderr, so stdout stays the evidence alone for whatever reads it, and the exit code stays 0 because the command answered the question it could answer. The bytes are the ones the model is sent — one bundle, two paths — which is what lets a reader put an answer beside its input and check one against the other. |
+| A citation is checked against the bundle, not only against the shape | The half of the schema check that makes Evidence First real at this layer. A shape check alone accepts a confident answer citing a commit that does not exist; this one builds the set of what the bundle actually holds — the commit, the paths, the definition names, the absence kinds — and refuses any citation naming something outside it. A shortened sha counts, because git takes prefixes and every command in this tool does, so a prefix names the same commit rather than an invented one. What the check still cannot see is written into the schema's §6: a sentence that stays inside a citation it does name and overstates it anyway. |
+| The README checker takes the AI variables out of the child environment | The same kind of pinning the checker already does with `COLUMNS` and the cache directory, and for the same reason: a block's output must not depend on the machine it runs on. The `explain` blocks show the offline path — the only path that can be replayed, since a model's answer is not the same twice — and a developer with an endpoint configured would otherwise see the online path, and get a red test that fails on their machine and nowhere else. |
+| Validation is a module of its own, with the three passes named | **The user's Unit 7, and the thing they called the difference between this and a project that wraps an LLM API.** It was already inside `explanation.py`'s `parse`, doing the work but not visible as a unit; splitting it out makes the contract readable and testable on its own terms. The passes are the pipeline's own words — the text is a JSON object, it has the shape asked for and only that shape, and every citation names something the bundle holds — and each raises on its own, so a refusal names the check rather than the first thing a reader happened to need. `explanation.py` keeps the schema's types, the instructions and the rendering, and never reads the model's text. |
+| A field the schema does not have is refused, and `confidence` gets its own message | **The rule that makes "do not trust the model" structural.** Dropping an unknown field quietly is the worst of both: the answer shown would not be the answer that was checked, and the model would never learn it had misread the task. `confidence` is the field most likely to arrive — the tool derives it from `based_on`, so a model reporting its own is answering a question it was not asked — and it is refused with a message saying exactly that rather than a generic "unknown key". The instruction telling the model not to send one is in the prompt as well, so the refusal is a backstop rather than a trap. |
+| The shortened sha in a confidence comes from `formatting`, not a local copy | The first version had `SHORT_SHA_LENGTH = 12` written into `explanation.py` while the rest of the tool shortens shas to 8 with `formatting.SHORT_SHA_LENGTH`. Two constants for one idea, and the copy only showed itself when the code moved into `validation.py` and a test caught the difference. The same rule the co-change unit recorded about identity: **a copy of a rule is a copy that can drift**, and the cheapest moment to delete one is when a move makes it visible. |
+| `explain --json` prints one envelope in both states, with `state` naming which | **The user's Unit 8, and the shape is the decision.** Without a model there is no explanation and the evidence is the answer, so the two states are genuinely different documents — and two shapes on one stdout would leave a program working out which it got, which is the reader this project has already refused to create once (`file --json` is always an object holding a list for the same reason). `state` is `explained` or `evidence_only`, `explanation` is null in the second, and the key set never changes. The alternative — refusing `--json` when no model is configured — was rejected because the offline path is Core First's whole point and taking a flag away from it would be taking it away from the case the project promises works everywhere. |
+| The envelope carries the evidence beside the answer | So an answer can be checked against its input without a second call, which is what the architecture freeze's "one bundle, two paths" rule is for. It also puts the derived `confidence` where a program can read it: the count the tool made from `based_on`, never a number the model chose. The cost is real — the document is the evidence plus the answer, not one or the other — and it is paid deliberately, because the alternative is a reader who has to run the command twice and hope the two runs agreed. |
+| A citation may name any section of the bundle, and the narrowest one wins | **The user's Unit 9: every conclusion traceable to a commit, a diff, an AST node or a co-change.** Two of those four had no citation form at all — the diff's spans and the co-change pairs were in the bundle and could not be pointed at, so a claim about where the change landed had to cite the whole file and one about what moves together had to cite a file and hope. The kinds are now `commit`, `file`, `definition`, `range` and `cochange` plus `absence`, and the two new ones are written in a fixed form (`<path>:<start>-<end>`, `<path> -> <partner>`) so "copied exactly" is checkable rather than a matter of the model's formatting. A range must be a span some diff actually put there, which is what stops a precise-looking claim nothing supports; a co-change must be the direction the statistic came from, because the score is conditional on the first file and the reverse is a different number. |
+| The render expands the evidence instead of printing ids | The ids are the chain's links in the JSON, and a reader following them back through a document is exactly the reconstruction this unit exists to remove. Each claim prints its citations — kind first and padded, so the eye can group the commit, the files, the spans and the pairs — and a reason prints the union of what its observations rest on, because a reader asking what a reason stands on wants the evidence and not three ids pointing at three other lists. The duplication between an observation's citations and its reason's is deliberate and cheap; a reader who cannot see what a claim rests on is the expensive outcome. |
+| The boundary suite is organised by failure mode, and each mode gets an honest verdict | **The user's Unit 10, and the shape is the decision.** Seven ways a model can be wrong, and the answer for each is one of three things: the validator refuses it, the render marks it, or nothing catches it. Laying it out that way is what makes the file worth more than its assertions — a mode with a defence has a test proving it, and a mode without one has a test **proving that too**, so nobody has to rediscover the edge. The refusals are already exhaustive in `test_validation.py`; what is new here is the adversarial form, an answer written the way a confident model writes one — fluent, fully cited, wrong — rather than a single field mutated. |
+| A candidate is marked, and the sharper sentence fires only when it is true | Two devices, both the project's existing shape (the sentence that prevents the one misreading, printed where the misreading happens — `files` ends by saying what a deleted row means, `cochange` by saying what a score is not). A sentence under the candidates whenever there is one, because every candidate is a reading: moving together is not a dependency, and a definition changing is not a statement about intent. And a second sentence, **only** for a candidate whose entire support is a co-change statistic, because that is the shape a reader is most likely to take for a finding — a note that fired every time would be noise, and noise is not read. A sentence is not a defence against a model that means to mislead; it is a defence against a reader taking a candidate for a finding, which is the failure this layer can prevent. |
+| Intent has no field, and that is the structural half of the answer to it | The schema has nowhere to put a motive, so an answer that invents one as a field of its own is refused as an unknown key rather than quietly carried along. What is left — a motive smuggled into a candidate, citing a definition that really did change — is not catchable, and the boundary suite asserts the acceptance and the marking side by side, so the two halves of the answer to the same question sit in one place. |
+| The core's independence is held twice, structurally and by running it | **The user's Unit 11: AI is an upper layer and must not pollute the core.** Either check alone can be satisfied while the other is broken: a module can keep the network out of its import list and still open a socket through something it was handed, and a command can pass one run with no network while a later unit imports `urllib` two layers down. So both are here. The structural one reads every module in the package and names `provider.py` as the only one allowed to import a networking module — the architecture freeze's §3 promise, widened from one module to the package, with a guard test asserting the provider *does* import one so the check cannot pass by checking an empty set. The behavioural one runs every reading command with `socket.socket`, `create_connection` and `getaddrinfo` all taken away and an endpoint pointed at a host that cannot resolve. |
+| The socket the test takes away fails as an ``OSError``, not as an assertion | The first version raised ``AssertionError`` from the patched socket, and the test for `explain`'s failure path failed in a way that looked like a bug in the tool: the exception was not one the provider handles, so it escaped as a traceback rather than as a sentence. **A test's simulated failure has to be the failure the code will actually meet** — an unreachable network surfaces as an `OSError` inside the standard library, and a stand-in that raises something else tests a path that never runs. |
+| A wrong base URL and a zero deadline are configuration, not failure | Two things a first run gets wrong, and both used to fail badly. `api.example.com/v1` — a host written the way hosts are written everywhere else — raised a `ValueError` from inside urllib and reached the user as a Python traceback; the request is now built inside a guard that turns it into a sentence naming the variable and showing the shape it needs. A deadline of `0` is not a setting but a typo, and left alone it produced "did not finish within 0 seconds" on every call, naming the symptom rather than the mistake; it falls back to the default now, the same way a non-numeric value already did. Retries keep their zero, because no retries is a real choice. |
+| A response past a megabyte is refused rather than read | The read had no bound, so a proxy's error page or something worse was read to the end — whatever the endpoint decided to send, into memory. The ceiling is far above any answer a model can produce inside the output limit, so reaching it means what came back is not a completion, and it is not retried: an endpoint that sends that much sends it again. |
+| The context is measured before it is budgeted | **The user's Unit 12, and the order is the decision.** `benchmarks/context_benchmark.py` builds six shapes — five files, two hundred, a thousand, one file with five hundred hunks, one file with three hundred definitions, and one wide commit with all three at once — and reports every section's own bytes, because a total says a bundle is too big without saying what made it so. What it found is that the bundle is linear in the commit with no ceiling at all (373,000 estimated tokens at a thousand files) and that the two sections the bundle *does* cap stay small (co-change never past 3.3 KB). The numbers are in `docs/v0.4-context-budget.md` §1 and the constants were chosen against them, not by taste. |
+| The selection is a module, and it is the only thing the budget touches | **The user's rule verbatim: 不能为了省 token 而改变事实层。只能改变送给模型的 context.** `selection.py` returns a `View` holding the bundle, the reduced context and the counts; `context.build_json` is untouched, so the offline path and `explain --json` print and carry exactly what they did before. Three tests hold that rather than a comment saying it: the bundle is the same bytes after a view is built, the offline path prints all thirty rows of a thirty-file commit, and the envelope still carries every row while `selection` reports the reduction. |
+| The rule is "the largest", stated as size and never as importance | A commit too large to show has to be cut somewhere, and the only order the evidence supports is how much each row moved — `added_lines + deleted_lines` for a file, the lines a definition spans for a definition, ties by path and name. Anything else would be a judgement about what a change *meant*, which is the one thing this layer exists to keep out. The bias is real and is written into both READMEs: a pure rename moves no lines, so on a reduced commit it sorts last and is the first thing left out. |
+| The caps are constants, not configuration | A selection that moved with a setting would make the model's input depend on the machine it ran on, and the bundle's whole design is that the same commit and the same database produce the same bytes. The knobs a user needs already exist: `MAX_CONTEXT_TOKENS` is the ceiling, and it refuses rather than truncating. |
+| A commit that fits is sent whole, byte for byte | `build_view` returns the bundle itself when nothing has to be dropped, so `view.json` is `build_json(context)` and Units 5 to 11's "one bundle, two paths" still holds for every commit that was never too large. Without this the rule would have been quietly repealed for all commits to make room for the ones that need it; `test_a_commit_that_fits_is_shown_whole` is what keeps it from being repealed by accident. |
+| The window is stated in `bounds` and the dropped rows in `selection` | The bundle already had a place for "what this capped" — `bounds` — and the view's is recomputed for the rows it actually holds, so it cannot claim a window it lost. The rows a list lost go in `selection` instead, because two blocks restating each other are two blocks that can disagree. The split is the reason the earlier-commit window is re-cut rather than row-capped: a window is a dimension the bundle already had a concept for, and two commits say what five do about whether a file is hot at a third of the cost. |
+| The answer is checked against what the model saw, not against the bundle | The tighter of the two checks and the honest one: a citation of a row the model never saw is refused even though the tool holds it, because an answer has to rest on what it was given. It is also free — `View.context` is a `CommitContext`, so `validation._known` and every other pass work on it unchanged. `test_a_citation_of_a_file_that_was_left_out_is_refused` finds the left-out path by comparing the two rather than writing one down, because which files the view names depends on the co-change section as well as on the cap. |
+| `explain --json` carries `selection` beside the whole evidence | The evidence stays all of it, and the key says how much of it the model saw — a program checking an answer against its input can then tell the two apart without a second call, which is the same reason `state` exists. The key is absent when nothing was dropped, and its absence is the statement that the view and the evidence are the same bytes, not an empty block. |
+| The ceiling refusal now names the reduction | By the time a context reaches `MAX_CONTEXT_TOKENS` it has already been cut to the largest entries, so the honest advice is the model's window rather than a smaller commit — and the message says the evidence was already reduced, so a user does not go looking for a knob that has already been turned. |
+| The wide fixture is built so size order and path order keep different sets | A fixture where every file changed equally could not tell the two rules apart and would pass whichever one the code happened to do, so file *index* changes `index + 2` lines and the largest twenty are the last twenty by name. The definitions in the same commit all span two lines, which is what makes the tie-breaker load-bearing rather than incidental — the same reason `build_deep_history_repo` exists for the window. |
+| The interpretation contract is printed where the answer is read | **The user's Unit 13: AI 输出是 interpretation，不是 historical fact，要尤其明确.** A contract that lives only in the README is a contract the tool does not keep, and this project already has the device for the alternative: `files` ends by saying what a deleted row means, `cochange` ends by saying what a score is not, and the candidates carry their own sentence. So the block opens with it — an interpretation of the evidence, the citations checked and the sentences around them not. It is the one thing a reader has to know *before* the first claim rather than after it, because an answer about a commit reads like a record of that commit, and the sentence names which half is verified instead of asking for suitable scepticism. Like the other two notes it is prose for a reader and stays out of the JSON, which `test_the_statement_is_not_in_the_json` now pins. |
+| One statement of the contract, and four documents pointing at it | Each of the five v0.4 documents had a reason to mention the distinction and none of them stated it, which is how a phase ends up with five paraphrases that drift apart. It is stated once — `docs/v0.4-problem-definition.md` §12, with the user's sentence verbatim, a fact-versus-interpretation table and the four consequences — and the evidence contract, the explanation schema, the architecture freeze and the context budget each say which half of it they are responsible for and point there. The same sentence is the seventh README principle in both languages and part of `explain --help`. |
+| The CHANGELOG's v0.4 section was written while it was still `[Unreleased]` | v0.4 was built and green and not tagged, so there was no release date and no version to put in a heading — and `tests/test_cli.py` requires the newest *numeric* section in the file to be the released version, which `[Unreleased]` deliberately is not. It became `## [0.4.0] - 2026-10-06` in the release commit, which is what the placeholder was for: writing the section at the time rather than at release time is what keeps it from being reconstructed from `git log` afterwards, which is the thing the file exists to avoid. |
 
 ## Traps already found
 
@@ -986,6 +1085,59 @@ now says the limit is on language, not on when to start.
     that the merge's diff is recomputable **only because the parents are
     stored**: that is a capability to be named in the contract, not one the
     bundle has for free.
+37. **A pure rename has no ``+++`` header, so a parser keyed on one says nobody
+    looked.** *Measured*: for a rename whose content did not change, `git show
+    --unified=0` prints `diff --git`, `similarity index 100%`, `rename from` and
+    `rename to` — and **no `---`/`+++` pair at all**, because there is no hunk for
+    them to belong to. The first version of the context's diff parser read `+++`
+    lines and nothing else, so the fixture's `core/app.py` — renamed with its
+    content untouched — came back as `no_ranges_recorded`, which is the state
+    meaning "git printed nothing for a path the commit says it touched". Git had
+    printed plenty; the answer was that no line moved. Those are different
+    answers and the wrong one reads as a defect in the data. It was found by a
+    test whose input was a hand-written patch rather than a repository, and that
+    is the part worth keeping: the patch was correct because it had been checked
+    against real git output first. **A parser written against a format has to be
+    tested against the format's real output**, or the test encodes the same wrong
+    assumption as the parser and agrees with it. The fix reads `rename to` as
+    well, and only while no `+++` has named the file yet — a rename that also
+    rewrote lines prints both headers, and `+++` is the side the ranges are
+    measured on.
+38. **A monkeypatch of `time.sleep` reaches every module that holds it.** The
+    provider's retry tests had to take the backoff out of the way, or each one
+    would have waited the real 1 s and 2 s. The first version patched
+    `codearchaeology.provider.time.sleep` — which is `time.sleep`, the same module
+    object the test's own local endpoint calls to hold an answer open. The
+    endpoint's delay silently became a no-op, so the deadline test — the one whose
+    entire point is that a call outliving the deadline is given up on — was
+    measuring a call that had already finished. It failed loudly (`DID NOT RAISE`),
+    and a slightly different arrangement would have had it pass while proving
+    nothing. The fix patches the module's own `_backoff` instead and calls through
+    to the real one to record the schedule. **Patching an attribute of a module
+    object patches it for everyone holding that object**, and `time`, `os` and
+    `json` are held by half the standard library: patch the thing the code under
+    test owns, not the thing it borrows.
+39. **The README checker's ellipsis has to be a line of its own.** A block may
+    elide its middle with `...`, and the checker finds it by looking for a list
+    element equal to `...` after each line is rstripped. `    ...` inside a JSON
+    block is not that element — the leading spaces survive the rstrip — so the
+    ellipsis is compared as if it were content and the block fails on every line
+    after it. The diff reads as the block disagreeing with the output about the
+    *next* line, which is where the eye goes and not where the problem is. The
+    ellipsis is unindented even when everything around it is not.
+
+40. **The benchmark's earlier commits rewrote identical bytes.** The first
+    version of `context_benchmark.py` wrote the same content for every commit
+    before the target, so git recorded no change for any of them: each file had
+    one event (its creation), the earlier-commit window was empty and the
+    co-change section had nothing to count. The numbers it produced looked
+    plausible and were measured on a history that did not exist. What gave it
+    away was arithmetic — the `typical` row's history section was 1,432 bytes
+    where a full five-commit window over five files is about 5,600 — and the fix
+    is that every commit writes different bytes, with the files touched per
+    commit scaled so each file is touched about ten times before the target.
+    **A benchmark's fixture is part of its result**, and the row that looked
+    smallest was the one that was wrong.
 
 ## Environment notes
 
@@ -1118,13 +1270,29 @@ now says the limit is on language, not on when to start.
     preconditions in `docs/v0.3-final-state.md` are checked. What comes next is
     v0.4, and it starts from a design freeze of its own rather than from this
     layer's assumptions.
+13. **v0.4 is built and release-ready, and the tag is not made.** Fourteen units:
+    four design documents (`v0.4-problem-definition`, `v0.4-evidence-contract`,
+    `v0.4-explanation-schema`, `v0.4-ai-architecture-freeze`), then the pipeline
+    (`context.py` → `provider.py` → `explanation.py` → `validation.py` → the
+    `explain` command), then provenance, the boundary suite, offline hardening,
+    the context budget (`selection.py`, `docs/v0.4-context-budget.md`), the
+    documentation pass that states the contract — an interpretation, not a
+    historical fact — in the problem definition §12, both READMEs, `explain
+    --help`, the CHANGELOG and the block itself, and the release audit above.
+    `docs/v0.4-final-state.md` is the record. The tree is at 660 tests, the
+    version is 0.4.0 in the five places the suite compares, and the roadmap row
+    says Done. **What is left is the outward half**: commit, push, four green CI
+    jobs on that commit, tag, Release — in that order, and only on the user's
+    word, which is the standing instruction this project has followed since
+    v0.3.1.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 473 tests, on 3.13
+$ uv run pytest                 # 660 tests, on 3.13
 $ uv run --python 3.11 pytest   # the same suite, on the declared floor
 $ uv run python benchmarks/benchmark.py --commits 10000 50000
+$ uv run python benchmarks/context_benchmark.py
 $ git push origin main          # over SSH, see above
 $ gh run list --limit 1         # then gh run watch <id>
 ```
@@ -1134,7 +1302,7 @@ A database written by an older schema version rebuilds itself on the next
 
 A release is three things beyond the code: the version in the four places the
 suite compares, the roadmap row, and both READMEs. The READMEs' console blocks
-are replayed against the fixtures rather than trusted — 50 of them now, and every
+are replayed against the fixtures rather than trusted — 55 of them now, and every
 registered command is required to have a section — and the way to do that is in
 the decisions table above.
 

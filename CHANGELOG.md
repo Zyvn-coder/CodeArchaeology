@@ -8,6 +8,87 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.4.0] - 2026-10-06
+
+The v0.4 AI layer: an interpretation of the evidence, and never a record of what
+happened. What it is and what holds it is `docs/v0.4-final-state.md`; the contract
+itself is `docs/v0.4-problem-definition.md` §12.
+
+### Added
+
+- **`archaeology explain <commit>`** — the tenth command, and the only one that
+  talks to a model. It gathers the evidence for one commit into a bundle and has
+  a model write an answer from it. With no model configured it prints the
+  evidence itself and exits 0, which is Core First rather than a fallback: the
+  analysis is complete without a model, and the model is a layer on top.
+- **The evidence bundle** — the commit, the files it touched *and where in each
+  the change landed* (read out of git, the one thing the database does not hold),
+  each file's life, the definitions this commit created, modified or ended, what
+  usually changes alongside those files, the earlier commits that touched them,
+  and what could not be read. Deterministic, with no model anywhere near it.
+- **The explanation structure** — `summary`, `observed_changes`, `evidence`,
+  `possible_reasons` and `uncertainty`, with Observed, Possible and Unknown kept
+  apart by the structure rather than by the wording, so a model that blurs them
+  has nowhere to put the result.
+- **Three validation passes** — the text is a JSON object, it has the shape that
+  was asked for and only that shape, and every citation names something the
+  bundle holds. A broken answer is asked for once more and then refused whole:
+  nothing of it is shown, because half an explanation with a note is worse than
+  none. `confidence` is counted by the tool from what a candidate rests on and
+  never reported by the model.
+- **`explain --json`** — the same answer for a program. `state` says which kind
+  of answer it is (`explained` or `evidence_only`), the evidence travels beside
+  the explanation so an answer can be checked against its input, and `selection`
+  is added when the model's view was reduced.
+- **An OpenAI-compatible provider** — one adapter for OpenAI, DeepSeek, Ollama,
+  vLLM and LM Studio, over the standard library only. The key is read from the
+  environment and never from a flag, the deadline is wall-clock around the whole
+  call rather than a socket timeout, retries cover the failures repeating can fix,
+  and `provider.py` is the only module in the tool that reaches a network.
+- **`benchmarks/context_benchmark.py`** — the bundle's size, section by section,
+  at six shapes a commit can be large along.
+- **`tests/test_boundaries.py`, `tests/test_offline.py`, `tests/test_selection.py`**
+  — the seven ways a model can be wrong (each with the honest verdict: refused,
+  marked, or not catchable), the core's independence from the network held both
+  structurally and by running every reading command with no socket, and the
+  context budget.
+
+### Changed
+
+- **A commit too large to send whole is reduced for the model, and only for the
+  model.** The largest file changes and definitions are kept, with each file's
+  life and its two most recent earlier commits, and the first few spans of each
+  change; every row that was dropped is counted in a `selection` block inside the
+  prompt, and a file whose spans were cut says so on its own row. The evidence
+  itself — what the command prints with no model, and what `--json` carries — is
+  unchanged, and the answer is checked against what the model was actually shown.
+  Measured: a thousand-file commit is about 373,000 estimated tokens of evidence
+  and about 7,300 of view.
+- **The output says what it is.** The block opens by stating that it is an
+  interpretation of the evidence and not a record of what happened, with the
+  citations checked and the sentences around them not; the same statement is the
+  seventh README principle and part of `explain --help`. The contract is
+  `docs/v0.4-problem-definition.md` §12.
+- The refusal past `CODEARCHAEOLOGY_AI_MAX_CONTEXT_TOKENS` now says the evidence
+  was already reduced, because by then it has been: what is left over the limit
+  is a limit set too low for the model rather than a commit that is too large.
+
+### Fixed
+
+- A mistyped `CODEARCHAEOLOGY_AI_BASE_URL` — a host written the way hosts are
+  written everywhere else, without a scheme — reached the user as a Python
+  traceback from inside `urllib`. It is now a sentence naming the variable and
+  showing the shape it needs.
+- A deadline of `0` is a typo rather than a setting, and it made every call fail
+  with "did not finish within 0 seconds"; it falls back to the default now, the
+  way a non-numeric value already did. Retries keep their zero, because no
+  retries is a real choice.
+- A response was read to the end however large it was; past a megabyte it is
+  refused instead, because an endpoint that sends that much is not answering with
+  a completion.
+- Both READMEs' module listings had never been updated for the v0.4 modules and
+  still said the command line had nine commands.
+
 ## [0.3.1] - 2026-10-01
 
 The v0.3.x release: the deterministic evidence layer, frozen.

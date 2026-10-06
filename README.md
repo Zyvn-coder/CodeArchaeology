@@ -4,10 +4,15 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.3.1, complete and frozen.** The nine commands below work today: the
-> three v0.1 brought, plus `hotspots`, `files` and `file` from v0.2, and `ast`,
-> `structure` and `cochange` from v0.3. What v0.3.x is and what it is not is
-> written down in [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md). The
+> **Status: v0.4.0 is released.** Ten commands work today: the three v0.1 brought,
+> plus `hotspots`, `files` and `file` from v0.2, `ast`, `structure` and `cochange`
+> from v0.3, and `explain` from v0.4 — the only one that talks to a model. The
+> evidence layer of v0.3.x is frozen, and what it is and is not is written down in
+> [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md); what v0.4 adds and what
+> holds it in place is [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md).
+> **What that answer is, and what it is not** — an interpretation of the evidence,
+> never a record of what happened — is fixed in
+> [`docs/v0.4-problem-definition.md`](docs/v0.4-problem-definition.md) §12. The
 > project is not on PyPI yet, so there is no `pip install` for it.
 
 ## Why this project exists
@@ -41,7 +46,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.3.1
+archaeology 0.4.0
 ```
 
 ## Usage
@@ -50,10 +55,10 @@ Every command takes a directory inside the repository, defaulting to the current
 directory. None of them ever writes to the repository: the analysis goes into a
 database in your cache directory.
 
-The reading commands — `timeline`, `hotspots`, `files`, `file`, `structure` and
-`cochange` — take `--json`, which prints the same facts in the same names for
-other programs to read. Only the JSON goes to stdout — the note about a stale
-analysis goes to stderr — so the output stays parseable whether or not the
+The reading commands — `timeline`, `hotspots`, `files`, `file`, `structure`,
+`cochange` and `explain` — take `--json`, which prints the same facts in the same
+names for other programs to read. Only the JSON goes to stdout — the note about a
+stale analysis goes to stderr — so the output stays parseable whether or not the
 snapshot is current. `commit` has no JSON form yet, and the two writers,
 `analyze` and `ast`, print a summary of what they did instead.
 
@@ -759,6 +764,175 @@ Co-change is a *statistic about commits*, and the block says what it is not: two
 files moving together is not a dependency, and a shared commit is not evidence of
 one. It is a place to look, not a conclusion to draw.
 
+### Explain one commit
+
+`explain` is the only command that talks to a model. It builds the evidence for
+one commit — everything the other commands read, gathered into one bundle — and,
+when a model is configured, has it written out.
+
+**Without a model it prints the evidence itself.** That is a working answer rather
+than an error: this is a local analyser first, and the model is an addition to it.
+
+```console
+$ archaeology explain 8eaff71d
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": {
+    "sha": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+...
+  "absences": [],
+  "bounds": {
+    "co_change_partners": 5,
+    "co_change_files": 5,
+    "co_change_files_omitted": 0,
+    "history_commits": 5,
+    "history_commits_omitted": 0
+  }
+}
+```
+
+The bundle carries the commit, the files it touched **and where in them the change
+landed** (`ranges`, read out of git — the one thing the database does not hold),
+each file's life, the definitions this commit created, modified or ended, what
+usually changes alongside those files, the earlier commits that touched them, and
+a list of what could not be read. `bounds` says what was capped, so a context that
+left rows out never reads like a complete one.
+
+**A commit too large to send whole is reduced for the model, and only for the
+model.** The bundle is deliberately not capped — a file list that stopped early
+would hide the answer to the question being asked, and a reader can scroll — so a
+commit touching a thousand files runs to about 297,000 estimated tokens. What the
+model is sent is a selection of it: the largest file changes and definitions, the
+life of each of those files, the two most recent earlier commits of each, and the
+first few spans of each change. Every list that lost rows says how many it lost,
+in a `selection` block inside the prompt, and a file whose spans were cut carries
+`ranges_total` on its own row, so a partial bundle never reads like a whole one.
+The evidence this command prints stays whole, `explain --json` still carries all
+of it, and the answer is checked against what the model was shown — a citation of
+a row that was left out is refused even though the tool holds it. Measured, on the
+widest shape in `benchmarks/context_benchmark.py` — two hundred files, twenty
+hunks and ten definitions each — that is about 11,000 tokens sent against 358,000
+in the bundle.
+
+To have a model write it out, name an endpoint and a model:
+
+```bash
+export CODEARCHAEOLOGY_AI_BASE_URL=https://api.openai.com/v1
+export CODEARCHAEOLOGY_AI_MODEL=gpt-4o-mini
+export CODEARCHAEOLOGY_AI_API_KEY=...        # or OPENAI_API_KEY
+```
+
+The endpoint has to speak the OpenAI chat shape, which is what OpenAI, DeepSeek,
+Ollama, vLLM and LM Studio all speak — pointing `CODEARCHAEOLOGY_AI_BASE_URL` at a
+local Ollama is the fully local case and needs no code of its own. The key is read
+from the environment only, never from a flag, and it never reaches an error
+message.
+
+Everything else is an environment variable too, and there is no config file: a
+second place for settings is a second place for them to disagree.
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `CODEARCHAEOLOGY_AI_BASE_URL` | The endpoint | none — required to use a model |
+| `CODEARCHAEOLOGY_AI_MODEL` | The model to ask | none — required to use a model |
+| `CODEARCHAEOLOGY_AI_API_KEY` | The key, sent as a bearer token | falls back to `OPENAI_API_KEY` |
+| `CODEARCHAEOLOGY_AI_TIMEOUT` | The deadline around one whole call, in seconds | 60 |
+| `CODEARCHAEOLOGY_AI_MAX_RETRIES` | Attempts after the first, on the failures repeating can fix | 2 |
+| `CODEARCHAEOLOGY_AI_MAX_CONTEXT_TOKENS` | The ceiling on what is sent | none — past it the command refuses rather than truncating |
+| `CODEARCHAEOLOGY_AI_MAX_OUTPUT_TOKENS` | The ceiling on the answer | none — an answer cut off at it is reported as cut off, not as malformed |
+
+The deadline is wall-clock around the whole call rather than a socket timeout, so
+an endpoint that dribbles one byte at a time still ends. Retries cover connection
+and DNS failures, a read that timed out, `429` and `5xx`; every other `4xx` is the
+request or the key being wrong, and repeating it would spend your money to fail
+identically.
+
+The answer is shown under three headings, and they are the whole of what tells a
+reader which part is which:
+
+- **Observed** — what the evidence holds. Every line cites the bundle, and a
+  citation that names nothing the bundle holds is refused rather than shown.
+- **Possible** — candidate reasons, each naming the observed changes it rests on.
+  The count under each one is how much evidence there is, not how good the reason
+  is; it is counted by the tool, never reported by the model.
+- **Unknown** — what could not be read, or is not in the repository at all.
+
+**The block opens by saying what the whole of it is: an interpretation of the
+evidence, not a record of what happened.** That is the contract this layer is
+held to, and it is the one thing a reader needs before the first claim rather than
+after it — an answer about a commit reads like a record of that commit, and it is
+not one. The distinction is not modesty about model quality; it is what the tool
+can actually check. The citations are the facts, the sentences around them are the
+reading, and the opening line says which half is verified. A sentence that stays
+inside a citation and still overstates it is not something a program catches —
+which is why the sentence is printed rather than left to the reader's judgement.
+The same commit explained twice may be explained differently, and that is what an
+interpretation is; what is identical between two runs is the evidence.
+
+**Every claim prints what it rests on**, expanded: the commit, the files, the
+spans the change landed in, the definitions it touched, what moves alongside
+them, the absences. The citations appear under the claim that uses them and again
+under the reason built on them, so a reader never has to follow ids back through
+the JSON to find out why something was said. **A candidate reason may be wrong;
+what it cannot do is leave a reader unable to see what it was standing on.**
+
+A citation names one of six things, and each is held against the bundle rather
+than against its shape: a `commit`, a `file`, a `definition`, a `range` (a span a
+diff actually put there), a `cochange` (one direction of a pair, because the
+statistic is not symmetric), or an `absence`. Citing the narrowest thing that
+carries the claim — the span rather than the file, the pair rather than "these
+files" — is what makes an answer checkable at all.
+
+**And a candidate is marked for what it is.** Under the candidates there is a
+sentence saying that a reading is not a finding — moving together is not a
+dependency, and a definition appearing or changing is not a statement about what
+the author meant — and a candidate whose entire support is a co-change statistic
+says so on its own line. A sentence is not a defence against a model that means to
+mislead; it is a defence against a reader taking a candidate for a finding, which
+is the failure this layer can actually prevent. What the tool refuses outright,
+what it only marks, and what it cannot catch at all is written down in
+`tests/test_boundaries.py`, one section per way a model can be wrong.
+
+**The model is never asked why the author made a change**, because the evidence
+does not hold it and no wording makes it available. A candidate reason is a
+candidate, and it is never printed in the summary, where a guess would read as a
+finding. An answer that breaks these rules is asked for once more and then refused
+whole — nothing of it is shown, because half an explanation with a note is worse
+than none.
+
+`--json` prints the same answer for a program. stdout is the document and nothing
+else; every note and every error goes to stderr, so a caller can parse stdout
+without filtering it first. When the commit was too large to send whole the
+document also carries `selection` beside the evidence: the evidence is still all
+of it, and that key is how much of it the model saw.
+
+```console
+$ archaeology explain 8eaff71d --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": "8eaff71d34a6f7eb6e27366ca8f72ab22cbba204",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+...
+      "co_change_partners": 5,
+      "co_change_files": 5,
+      "co_change_files_omitted": 0,
+      "history_commits": 5,
+      "history_commits_omitted": 0
+    }
+  }
+}
+```
+
+**One shape in both states, with `state` saying which one it is.** Without a model
+there is no explanation, and the evidence is the answer — so `state` is
+`evidence_only` and `explanation` is null. A reader that had to work out which of
+the two it got would be a reader that can be wrong, the same reason `file --json`
+is always an object holding a list. The evidence travels beside the answer so that
+one can be checked against the other without a second call, and the `confidence`
+in the JSON is the count the tool made, not a number the model chose.
+
 ### Re-running `analyze` does not throw the structure away
 
 `analyze` and `ast` write different tables, and `analyze` removes only what git no
@@ -900,7 +1074,7 @@ carries the interpreter and the analyzer that produced it.
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its nine commands
+    cli.py          the Typer application and its ten commands
     analysis.py     running an analysis: read the repository, write the database
     ast_pass.py     the AST pass: read every Python file version, store its structure
     cache.py        where analysis databases live
@@ -918,6 +1092,11 @@ src/codearchaeology/
     statistics.py   the numbers that summarise one file's life
     hotspots.py     ranking living files, and the inventory of every file
     relationships.py  commits and files, read from either end
+    context.py      the evidence for one commit, built with no model anywhere near it
+    selection.py    what of that evidence a model is shown, when it is too large
+    explanation.py  the answer's shape, the instructions, and the block
+    validation.py   the three passes that decide whether an answer may be shown
+    provider.py     the one module in the tool allowed to reach a network
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -926,6 +1105,7 @@ benchmarks/
     benchmark.py    the Git operations and the AST pass, at whatever scale you ask
     cochange_benchmark.py  the co-change analysis as the history grows
     index_benchmark.py     what each database index buys and what it costs
+    context_benchmark.py   the explanation bundle's size, section by section
 ```
 
 ## Principles
@@ -933,7 +1113,11 @@ benchmarks/
 These are not aspirations. They constrain what the code is allowed to do.
 
 1. **Core First** — The core cannot depend on an LLM. Every feature must run
-   with no AI at all. AI is a layer on top, never the foundation.
+   with no AI at all. AI is a layer on top, never the foundation. Held by
+   `tests/test_offline.py`, two ways: every reading command is run with every way
+   of opening a socket taken away, and `provider.py` is the only module in the
+   package allowed to import a networking module — so a later unit that reaches
+   for one one layer too high fails the build.
 2. **Local First** — Any Git repository must be analyzable locally, with no
    remote service involved.
 3. **Evidence First** — Every conclusion must be traceable to a specific
@@ -944,6 +1128,19 @@ These are not aspirations. They constrain what the code is allowed to do.
    web UI.
 6. **SQLite is the only store** — No PostgreSQL, Redis, or vector databases
    in v0.x.
+7. **Interpretation, not history** — What the tool derives from a repository is a
+   fact: a commit, a diff, a definition, each with a test behind it. What a model
+   writes from those facts is a **reading of them, never a record of what
+   happened**, and the two are never presented as the same kind of thing. The
+   evidence is reproducible and the prose is not; the structure keeps Observed,
+   Possible and Unknown apart; every claim prints the citations it rests on; the
+   block opens by saying what it is; and nothing a model writes is ever stored as
+   evidence. Held by `tests/test_explain.py` (the block's opening line, and its
+   absence from the JSON) and by the structure itself, which is what
+   `tests/test_validation.py` and `tests/test_boundaries.py` keep honest: a
+   reading cannot be presented as an observation, and a citation that names
+   nothing is refused whole. The full statement is
+   `docs/v0.4-problem-definition.md` §12.
 
 ## Roadmap
 
@@ -952,7 +1149,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 | v0.1 | Git scan, commit history, file changes, SQLite storage, CLI timeline | Done |
 | v0.2 | File lifecycle, code hotspots, and a JSON output for other programs | Done |
 | v0.3 | AST analysis, function and class evolution, and co-change | Done |
-| v0.4 | AI explanations over the evidence layer (pluggable providers) | Planned |
+| v0.4 | AI explanations over the evidence layer (pluggable providers) | Done — `explain`, with the OpenAI-compatible provider |
 | v0.5 | Developer memory — your own technical usage over time | Planned |
 | v0.6 | AI-assisted change analysis and replay | Planned |
 
@@ -1029,6 +1226,35 @@ Each release, and what it changed, is recorded in the
   therefore invalidates every stored row, and the next `ast` re-parses it.
 - A definition is compared by its own structure, not by where it sits, so a
   function that only moved down its file is `unchanged`.
+- **`explain` is the only command that needs anything outside the machine.** With
+  no model configured it prints the evidence and exits 0; with one, it sends the
+  evidence for that commit to the endpoint and shows what comes back. Nothing else
+  in the tool depends on it, and the analysis itself never leaves the repository.
+- **An explanation is an interpretation, not a historical fact, and it is checked
+  for its citations rather than for its truth.** A citation that names nothing the
+  bundle holds is refused whole, and a candidate reason is kept out of the summary
+  — but a sentence that stays inside a citation it does name and still overstates
+  it is not something a program can catch. The block says so in its first line,
+  and the check is written down with its limit in
+  `docs/v0.4-explanation-schema.md` §6 and `docs/v0.4-problem-definition.md` §12.
+- **Nothing a model writes is stored.** An explanation is printed and read, never
+  written back to the database, so no interpretation can later be read as evidence
+  by a command that treats rows as facts. Whether one is ever stored is an open
+  question, and this is why it is not a small one.
+- `explain --json` always carries the evidence beside the answer, but there is no
+  flag for seeing the evidence *alone* in the block form once a model is
+  configured — the offline path is the only way to that.
+- What is sent to a model is bounded twice. The selection cuts a large commit
+  down to its largest entries — about 11,000 estimated tokens at the widest shape
+  the benchmark builds, against 358,000 in the bundle — and past
+  `CODEARCHAEOLOGY_AI_MAX_CONTEXT_TOKENS` the command refuses rather than sending
+  evidence the endpoint would truncate.
+- **The selection keeps the largest changes, which is a rule about size and not
+  about importance.** A pure rename moves no lines, so on a commit large enough to
+  be reduced it sorts last among the files and is the first thing left out; the
+  counts in the `selection` block say how many rows went with it. Nothing here
+  decides what a change *meant*, and the block is written so a reader is not left
+  to guess what is missing.
 - Tested on Linux and Windows, on Python 3.11 and 3.13, by CI. macOS is untested.
 
 ## License

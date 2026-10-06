@@ -533,6 +533,113 @@ def build_edit_history_repo(destination):
     return repo
 
 
+def build_deep_history_repo(destination, edits: int = 8):
+    """Create a repository that edits one file more often than a window holds.
+
+    The context keeps a bounded window of the commits before this one that
+    touched each file, and every other fixture stops well short of filling it —
+    which means a window of any size at all would pass on them, and the count of
+    what was left out would be zero in every test that reads it. This one is
+    longer than the window on purpose: a cap nothing fills is a cap nothing
+    checks.
+
+    *edits* commits touch ``deep.py`` after the one that creates it, so the last
+    of them has *edits* earlier commits to draw a window from.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, "deep.py", _sweep_file("deep", 0))
+    _commit(repo, _day(1), "Create deep.py")
+
+    for number in range(1, edits + 1):
+        _write_file(repo, "deep.py", _sweep_file("deep", number))
+        _commit(repo, _day(number + 1), f"Edit deep.py, pass {number}")
+
+    return repo
+
+
+# The wide fixture: one commit touching more files than the model's view holds,
+# with each file edited in a different number of places so that the files kept by
+# a size rule and the files kept by path order are different sets.
+WIDE_FILES = 30
+WIDE_HISTORY = 6
+WIDE_SPREAD = 60
+WIDE_SMALL_MESSAGE = "Create the first module"
+WIDE_ADD_MESSAGE = "Add the other modules"
+WIDE_MESSAGE = "Rewrite every module"
+
+
+def _wide_path(index: int) -> str:
+    return f"mod{index:02d}.py"
+
+
+def _wide_file(index: int, edit: int, hunks: int = 0) -> str:
+    """One version of one file in the wide fixture: real Python, edited in places.
+
+    ``hunks`` is how many separate lines this version changes, spaced two apart so
+    that ``--unified=0`` reports them as separate hunks rather than as one run.
+    The fixture's last commit gives file *index* one more changed line than the
+    file before it, which is what makes a size rule and a path rule keep
+    different sets — a fixture where every file changed equally could not tell the
+    two apart, and would pass whichever one the code happened to do.
+    """
+    lines = [f"# module {index}"]
+    for number in range(WIDE_SPREAD):
+        value = edit if hunks and number % 2 == 0 and number // 2 < hunks else 0
+        lines.append(f"value_{number} = {value}")
+    lines.append(f"def function_{index}(value):")
+    lines.append(f"    return value + {edit}")
+    return "\n".join(lines) + "\n"
+
+
+def build_wide_commit_repo(destination, files=WIDE_FILES, history=WIDE_HISTORY):
+    """Create a repository whose last commit is too large to send to a model.
+
+    The context builder's rule is that a commit's own facts are not capped, and
+    this is the fixture that turns that rule into a number: the last commit
+    touches *files* files, so its bundle runs to tens of thousands of estimated
+    tokens while the view built from it does not.
+
+    The first commit touches a single file, which is the other half of what the
+    selection layer has to get right: a commit that fits is sent whole. The
+    commits in between edit every module, so the earlier-commit window and the
+    co-change statistics have a history to be built from rather than an empty one.
+    """
+    repo = Path(destination)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    git_output(repo, "init", "--initial-branch", "main")
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+
+    _write_file(repo, _wide_path(0), _wide_file(0, edit=1))
+    _commit(repo, _day(1), WIDE_SMALL_MESSAGE)
+
+    for index in range(1, files):
+        _write_file(repo, _wide_path(index), _wide_file(index, edit=2))
+    _commit(repo, _day(2), WIDE_ADD_MESSAGE)
+
+    for number in range(3, history + 3):
+        for index in range(files):
+            _write_file(repo, _wide_path(index), _wide_file(index, edit=number))
+        _commit(repo, _day(number), f"Edit every module, pass {number - 2}")
+
+    for index in range(files):
+        _write_file(
+            repo,
+            _wide_path(index),
+            _wide_file(index, edit=history + 3, hunks=index + 1),
+        )
+    _commit(repo, _day(history + 3), WIDE_MESSAGE)
+
+    return repo
+
+
 LARGE_COMMITS = 1000
 LARGE_FILES = 60
 LARGE_TOUCHED = 5
