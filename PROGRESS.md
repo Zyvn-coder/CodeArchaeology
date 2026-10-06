@@ -10,15 +10,13 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-06. v0.4 is built and release-ready: `docs/v0.4-final-state.md`
-is the record, the version is 0.4.0 in the five places the suite compares, and the
-twelve-check release audit is below.** The tag is not made yet, and the release
-order is the reason it is not: commit → push → all four CI jobs green **on that
-commit** → tag → GitHub Release. The whole v0.4 tree has not been through CI at
-all, so its first push is the first time it meets the Windows runners. Open on
-purpose: `commit` has no JSON form, and the three v0.4 questions — whether an
-explanation is ever stored, whether the prompt gets a unit of its own, and how the
-evidence alone is read once a model is configured.
+**Last updated: 2026-10-06. v0.4.0 is released: tagged at `07e3da7` with a GitHub
+Release, after all four CI jobs passed on that commit, and
+`docs/v0.4-final-state.md` is the record.** The twelve-check release audit is
+below. `main` is pushed and level with `origin/main`. Open on purpose: `commit` has
+no JSON form, and the three v0.4 questions — whether an explanation is ever
+stored, whether the prompt gets a unit of its own, and how the evidence alone is
+read once a model is configured.
 
 ## The v0.4 release audit, 2026-10-06
 
@@ -37,8 +35,8 @@ and what it found:
 | no-AI Core | `test_offline` | held twice: `provider.py` is the only module importing a networking one, and every reading command runs with `socket.socket`, `create_connection` and `getaddrinfo` taken away |
 | Documentation | both READMEs, `CHANGELOG.md`, `docs/`, `explain --help` | the interpretation contract stated in five places and pointing at one; `docs/v0.4-final-state.md` is the release record |
 | Version | the five copies `tests/test_cli.py` compares | **0.4.0** in `pyproject.toml`, `__version__`, both READMEs and the CHANGELOG's newest section |
-| CI | `gh run list` | the last pushed commit is green on all four jobs; **the v0.4 tree has never been pushed**, so it has never been through CI |
-| Release tag | `git tag -l` | `v0.3.1` is the newest; `v0.4.0` does not exist yet, and the release order says it goes on a commit whose own CI is green |
+| CI | `gh run list` | the last pushed commit is green on all four jobs; **the v0.4 tree had never been pushed**, so it had never been through CI — the release's first push was its first time on the Windows runners, and it passed (run `37459845245`, `07e3da7`, four of four) |
+| Release tag | `git tag -l` | `v0.3.1` was the newest; `v0.4.0` did not exist yet, and the release order says it goes on a commit whose own CI is green — which it did: annotated tag on `07e3da7`, all four jobs green before it was made |
 
 Two things the audit is worth keeping for, beyond the twelve rows:
 
@@ -48,9 +46,11 @@ Two things the audit is worth keeping for, beyond the twelve rows:
   now, by hand, and the one failure is the documented gap rather than a surprise.
 - **CI is the one check that cannot be done locally**, and it is the one that
   found a real defect in the last release (trap 35: a Windows pipe carries the
-  machine's ANSI code page). The v0.4 tree — 25 changed or new files, five of them
-  modules — has never been run by the Windows runner, which is exactly why the
-  release order puts the tag after the green run rather than before it.
+  machine's ANSI code page). At audit time the v0.4 tree — 25 changed or new
+  files, five of them modules — had never been run by the Windows runner. The
+  release order put the tag after that run rather than before it, and it passed;
+  v0.3.1's did not, which is the whole reason the order is a rule rather than a
+  preference.
 
 ## Where the project stands
 
@@ -1270,21 +1270,21 @@ now says the limit is on language, not on when to start.
     preconditions in `docs/v0.3-final-state.md` are checked. What comes next is
     v0.4, and it starts from a design freeze of its own rather than from this
     layer's assumptions.
-13. **v0.4 is built and release-ready, and the tag is not made.** Fourteen units:
-    four design documents (`v0.4-problem-definition`, `v0.4-evidence-contract`,
+13. **v0.4.0 is released.** Fourteen units: four design documents
+    (`v0.4-problem-definition`, `v0.4-evidence-contract`,
     `v0.4-explanation-schema`, `v0.4-ai-architecture-freeze`), then the pipeline
     (`context.py` → `provider.py` → `explanation.py` → `validation.py` → the
     `explain` command), then provenance, the boundary suite, offline hardening,
     the context budget (`selection.py`, `docs/v0.4-context-budget.md`), the
     documentation pass that states the contract — an interpretation, not a
     historical fact — in the problem definition §12, both READMEs, `explain
-    --help`, the CHANGELOG and the block itself, and the release audit above.
-    `docs/v0.4-final-state.md` is the record. The tree is at 660 tests, the
-    version is 0.4.0 in the five places the suite compares, and the roadmap row
-    says Done. **What is left is the outward half**: commit, push, four green CI
-    jobs on that commit, tag, Release — in that order, and only on the user's
-    word, which is the standing instruction this project has followed since
-    v0.3.1.
+    --help`, the CHANGELOG and the block itself, and the release audit.
+    **Closed**: the release commit is `07e3da7`, all four CI jobs passed on it
+    before anything was tagged, `v0.4.0` is an annotated tag on it with a GitHub
+    Release, and `docs/v0.4-final-state.md` is the record. `main` is pushed and
+    level with `origin/main`. This is the first release here that needed no second
+    commit — v0.3.0's tag moved once and v0.3.1's named a fix, both because the
+    tag went before the runner had spoken.
 
 ## How to verify
 
