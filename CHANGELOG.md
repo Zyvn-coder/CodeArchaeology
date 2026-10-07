@@ -8,6 +8,83 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.5.0] - 2026-10-07
+
+The v0.5 Developer Memory layer: what people know about the project, kept beside
+the evidence and never treated as it. What it is and what holds it is
+`docs/v0.5-final-state.md`; the definition is `docs/v0.5-design.md` §3, and the
+five rules that keep memory out of the evidence layer are §13.2.
+
+### Added
+
+- **`archaeology memory`** — a group of six acts, and the last of the sixteen
+  commands: `create` (admit a statement about one subject, with whatever evidence
+  it was made from), `list`, `show`, `supersede` (replace it, linking both ways),
+  `invalidate` (end it with a reason) and `adopt` (say that a path memories name
+  is this project at a new one). None of them needs a model, which is Core First
+  made visible: a memory is written, listed and read back with nothing
+  configured.
+- **The memory store** — two tables beside the evidence in the same SQLite file,
+  with their own stamp (`memory_schema_version = "1"`; the evidence schema stays
+  at 4). A memory is a UUID addressed by prefix, its subject is structured
+  (repository, path, definition, commit) because it is looked up by, and a
+  citation stays the v0.4 form string because it is compared for equality.
+- **Provenance that is checked and never repaired** — a subject and up to six
+  kinds of citation (commit, file, definition, range, co-change, absence) are
+  held against the stored history when the memory is admitted and re-checked
+  every time it is read, and the three states — resolves, no longer resolves,
+  not checked — are rendered differently. There is no foreign key into the
+  evidence tables on purpose: a cascade would delete memories and a plain key
+  would make `analyze` fail.
+- **The lifecycle** — active, superseded and invalidated; both endings are
+  terminal, there is no delete and no in-place edit, and a rule that comes back
+  is a new memory.
+- **`explain` reads them** — the memories related to a commit are shown in their
+  own labelled section, in the offline block and in the model's prompt, split
+  into *in force at this commit* and *related, not provably in force*, capped at
+  five with every dropped count stated. In `explain --json` the section is a
+  sibling of `evidence` and absent when empty, so a commit with no related
+  memories prints exactly what v0.4 printed. A model's answer may relate itself
+  to a memory by id, checked against the section it was shown, and the stored
+  statement is printed verbatim.
+- **`--since-commit` and `--since-date`** on `create` and `supersede` — the
+  author's claim about when a statement started holding, optional by design
+  because absent means unknown and never "from the beginning".
+- **`benchmarks/memory_benchmark.py`**, and `tests/test_memory*.py` — the store
+  measured from ten to a hundred thousand memories, and the boundary suite that
+  holds the phase's real risk: every evidence command is run with the memory
+  store made unreadable, every reading command is compared byte for byte against
+  a database with no memories in it, and a memory's id is refused as evidence of
+  every kind.
+
+### Changed
+
+- **The database is no longer only a cache.** Every evidence row can be rebuilt
+  by reading git again; a memory row cannot. `analyze`, `ast`, `clear_history`
+  and a schema rebuild therefore preserve memory — the memory tables are
+  deliberately not on the list of tables a rebuild drops — and the corruption
+  sentence no longer says to delete the file, because that advice now destroys
+  knowledge. Both READMEs state the exception wherever the database is
+  described.
+- **A memory is never evidence.** The validator's semantic pass refuses a
+  memory's id as a citation of any kind without being told what a memory is, the
+  provider imports nothing from the package so a model cannot reach the store,
+  and only `cli.py` calls a writing act.
+
+### Fixed
+
+- **`memory list` was linear** — it read every memory in the store to print
+  twenty of them. The read now stops at the slice, the count behind it is a
+  query of its own, and the child rows are fetched by the ids that were read:
+  78ms at a hundred thousand memories, where it was 1.36s.
+- **A date that does not exist is refused** — `--since-date 2024-13-45` passed a
+  shape check and would have been compared by the temporal rule as if it named a
+  day.
+- **A stamp with no tables read as an empty store** — a database whose memory
+  tables were dropped by hand still claimed the current stamp and listed zero
+  memories to somebody who had written a hundred. It is now its own refusal: the
+  store is asked to account for what it claims rather than read as empty.
+
 ## [0.4.0] - 2026-10-06
 
 The v0.4 AI layer: an interpretation of the evidence, and never a record of what

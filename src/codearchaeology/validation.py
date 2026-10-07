@@ -22,6 +22,13 @@ check alone accepts a confident answer citing a commit that does not exist. The
 set of what is allowed is built from the context, so a citation is held against
 this commit's evidence rather than against a rule about what a sha looks like.
 
+The same pass holds ``related_memory`` against the ids the model was shown. That
+is the one way an answer may point at a memory, and it is checked against the
+section rather than the store: a memory the model never saw is refused exactly as
+an unseen row's citation is. Nothing else here knows what a memory is — the
+caller passes the ids, and memory is never part of the bundle a citation is
+checked against.
+
 What none of the three can see is written down in the schema's §6 and repeated
 here so nobody has to go looking: a sentence that stays inside a citation it does
 name and overstates it anyway is not something a program can catch. The check
@@ -46,6 +53,7 @@ from codearchaeology.explanation import (
     Explanation,
     ObservedChange,
     PossibleReason,
+    RelatedMemory,
     Uncertainty,
 )
 from codearchaeology.formatting import SHORT_SHA_LENGTH
@@ -58,12 +66,20 @@ CITATION = re.compile(r"\[([A-Za-z][A-Za-z0-9_-]*)\]")
 # rather than ignored: the answer that is shown has to be the answer that was
 # checked, and a field nobody reads is a claim nobody verified.
 TOP_LEVEL = frozenset(
-    {"summary", "observed_changes", "evidence", "possible_reasons", "uncertainty"}
+    {
+        "summary",
+        "observed_changes",
+        "evidence",
+        "possible_reasons",
+        "uncertainty",
+        "related_memory",
+    }
 )
 CHANGE_KEYS = frozenset({"id", "statement", "evidence"})
 EVIDENCE_KEYS = frozenset({"id", "kind", "ref", "detail"})
 REASON_KEYS = frozenset({"statement", "based_on"})
 UNCERTAINTY_KEYS = frozenset({"kind", "detail"})
+RELATED_KEYS = frozenset({"memory_id", "note"})
 
 # The one key that gets a message of its own, because it is the one most likely
 # to arrive and the one whose presence means the model misunderstood the task.
@@ -79,17 +95,25 @@ class ExplanationError(RuntimeError):
     """Raised when the model's answer is not usable as it stands."""
 
 
-def validate(text: str, context: CommitContext) -> Explanation:
+def validate(
+    text: str, context: CommitContext, memory_ids: "frozenset[str] | set[str]" = frozenset()
+) -> Explanation:
     """Check the model's answer and derive what the tool owns.
 
     Raises :class:`ExplanationError` naming the check that failed. Nothing is
     repaired: an answer with a citation that names nothing is refused whole,
     because printing the rest of it would present a broken answer as a complete
     one.
+
+    ``memory_ids`` is what the model was shown of the memory section, and it is
+    the whole of what an answer may relate itself to — the same rule a citation
+    is held to. It is a set of ids rather than the section itself so that this
+    module never has to know what a memory is: memory is not evidence, and the
+    pass that checks the evidence has no business reading the store.
     """
     document = _parsed(text)
     _schema(document)
-    return _semantics(document, context)
+    return _semantics(document, context, memory_ids)
 
 
 # Pass one: the text.
@@ -166,6 +190,13 @@ def _schema(document: dict) -> None:
         if "detail" in entry and not isinstance(entry["detail"], str):
             raise ExplanationError(f"{where}.detail is not text")
 
+    for position, entry in enumerate(_list(document, "related_memory")):
+        where = f"related_memory[{position}]"
+        entry = _mapping(entry, where)
+        _no_unknown(entry, RELATED_KEYS, where)
+        _text(entry, "memory_id", where)
+        _text(entry, "note", where)
+
 
 def _no_unknown(entry: dict, allowed: frozenset, where: str) -> None:
     unknown = [key for key in entry if key not in allowed]
@@ -183,7 +214,9 @@ def _no_unknown(entry: dict, allowed: frozenset, where: str) -> None:
 # Pass three: what it names.
 
 
-def _semantics(document: dict, context: CommitContext) -> Explanation:
+def _semantics(
+    document: dict, context: CommitContext, memory_ids: "frozenset[str] | set[str]"
+) -> Explanation:
     evidence = _evidence(document)
     known = _known(context)
     for item in evidence:
@@ -205,7 +238,38 @@ def _semantics(document: dict, context: CommitContext) -> Explanation:
         evidence=evidence,
         possible_reasons=reasons,
         uncertainty=_uncertainty(document),
+        related_memory=_related(document, memory_ids),
     )
+
+
+def _related(
+    document: dict, memory_ids: "frozenset[str] | set[str]"
+) -> tuple[RelatedMemory, ...]:
+    """The memories the answer related itself to, held against what it was shown.
+
+    A memory is not in the bundle, so this is the only way an answer may point at
+    one — and the id has to be one the model actually saw. An id it did not is
+    refused for the reason an unseen row's citation is: an answer has to rest on
+    what it was given, not on something that happens to be true elsewhere.
+    """
+    found = []
+    for position, item in enumerate(_list(document, "related_memory")):
+        where = f"related_memory[{position}]"
+        entry = _mapping(item, where)
+        _no_unknown(entry, RELATED_KEYS, where)
+        memory_id = _text(entry, "memory_id", where)
+        if memory_id not in memory_ids:
+            raise ExplanationError(
+                f"{where} names memory {memory_id!r}, which is not in the memory"
+                f" section this answer was shown"
+            )
+        found.append(
+            RelatedMemory(memory_id=memory_id, note=_text(entry, "note", where))
+        )
+
+    if len({item.memory_id for item in found}) != len(found):
+        raise ExplanationError("two related memories share an id")
+    return tuple(found)
 
 
 def _known(context: CommitContext) -> dict[str, set[str]]:

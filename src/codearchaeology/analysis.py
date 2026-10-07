@@ -45,7 +45,16 @@ def open_analysis(repository_root, database):
 
     connection = connect(database)
     try:
-        stored_root = get_meta(connection, "repository_root")
+        try:
+            stored_root = get_meta(connection, "repository_root")
+        except sqlite3.DatabaseError as error:
+            # The file is not a database, or not one SQLite can read. Until
+            # v0.5 the advice for a broken cache was to delete it; a database
+            # can now hold memories, which cannot be rebuilt from git, so the
+            # sentence says to copy the file first — an instruction that
+            # destroys what it is meant to recover is worse than none.
+            raise AnalysisError(_unreadable(database, error)) from None
+
         if stored_root is None:
             raise AnalysisError(_missing_analysis(database, expected_root))
         if stored_root != expected_root:
@@ -166,19 +175,28 @@ def analyze(path, database=None) -> AnalysisResult:
 
     connection = connect(database)
     try:
-        # Rebuilds the tables when the database was written by another schema
-        # version, so that a stale cache is refreshed instead of failing on a
-        # column that is not there yet.
-        prepare_database(connection)
-        # The stored history becomes exactly what git has now: the commits that
-        # are still there are written, and the ones a rebase or an amend took out
-        # of git go with everything built on them. The AST rows of the commits
-        # that stayed are left where they are — they are keyed on the sha, so
-        # they are still true, and discarding them would cost a full re-parse to
-        # learn the same thing.
-        write_commits(connection, commits)
-        set_meta(connection, "repository_root", str(repository_root))
-        set_meta(connection, "head_sha", head_sha)
+        try:
+            # Rebuilds the tables when the database was written by another schema
+            # version, so that a stale cache is refreshed instead of failing on a
+            # column that is not there yet. The rebuild drops the evidence tables
+            # and nothing else: the memory tables are not in that list, because a
+            # memory cannot be rebuilt from git.
+            prepare_database(connection)
+            # The stored history becomes exactly what git has now: the commits that
+            # are still there are written, and the ones a rebase or an amend took out
+            # of git go with everything built on them. The AST rows of the commits
+            # that stayed are left where they are — they are keyed on the sha, so
+            # they are still true, and discarding them would cost a full re-parse to
+            # learn the same thing.
+            write_commits(connection, commits)
+            set_meta(connection, "repository_root", str(repository_root))
+            set_meta(connection, "head_sha", head_sha)
+        except sqlite3.IntegrityError:
+            # The tool's own data breaking a constraint is a defect in the tool,
+            # and reporting it as an unreadable file would hide it.
+            raise
+        except sqlite3.DatabaseError as error:
+            raise AnalysisError(_unreadable(database, error)) from None
     finally:
         connection.close()
 
@@ -197,4 +215,20 @@ def _missing_analysis(database: Path, repository_root: str) -> str:
     return (
         f"no analysis of {repository_root} at {database};"
         f" run 'archaeology analyze {repository_root}' first"
+    )
+
+
+def _unreadable(database: Path, error: Exception) -> str:
+    """A sentence for a file SQLite cannot read, instead of a traceback.
+
+    The advice changed in v0.5 and the change is the point: a database used to
+    be a cache that could be deleted and rebuilt, and it can now hold memories
+    that cannot be rebuilt from anything. So the sentence names the file, says
+    what SQLite said, and asks for a copy before the file is replaced.
+    """
+    return (
+        f"{database} could not be read: {error}."
+        f" It may be damaged, and it is not only a cache any more — it can hold"
+        f" memories that cannot be rebuilt from git. Copy it somewhere safe"
+        f" before deleting or replacing it"
     )

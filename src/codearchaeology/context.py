@@ -778,6 +778,20 @@ def _bounds(
     )
 
 
+def diff_ranges(
+    repository_root, commit: Commit
+) -> dict[str, tuple[LineRange, ...]] | None:
+    """Where each file's change landed, for a caller outside this module.
+
+    The bundle reads this for the commit it explains, and a memory's ``range``
+    citation is a span of one commit's diff — so holding one against the
+    evidence needs the same reading. The work is :func:`_diff_ranges`'s; this is
+    a name for it another module may use, so that nothing has to import a
+    private one.
+    """
+    return _diff_ranges(repository_root, commit)
+
+
 def _diff_ranges(
     repository_root, commit: Commit
 ) -> dict[str, tuple[LineRange, ...]] | None:

@@ -10,13 +10,691 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-06. v0.4.0 is released: tagged at `07e3da7` with a GitHub
-Release, after all four CI jobs passed on that commit, and
-`docs/v0.4-final-state.md` is the record.** The twelve-check release audit is
-below. `main` is pushed and level with `origin/main`. Open on purpose: `commit` has
-no JSON form, and the three v0.4 questions — whether an explanation is ever
-stored, whether the prompt gets a unit of its own, and how the evidence alone is
-read once a model is configured.
+**Last updated: 2026-10-07. v0.5 is complete in the tree — all twelve units, the
+release audit included — and the audit is green: 921 tests on the development
+interpreter and 921 on the 3.11 floor, the CLI, JSON, README and documentation
+contracts, the offline check, the version in its five copies, the schema at 4 with
+memory's stamp at 1, and a clean secret scan.** The tree is at 0.5.0, both READMEs
+carry replayed blocks for everything, and `docs/v0.5-final-state.md` is the record.
+What is left is the release itself — commit, push, all four CI jobs green, tag,
+GitHub Release — which the user's standing rule reserves to them, plus the two
+measured linear costs the READMEs name. `docs/v0.5-design.md` is the
+definition, `docs/v0.5-storage-design.md` the data model,
+`docs/v0.5-cli-design.md` the command line and `docs/v0.5-final-state.md` the
+record. v0.4.0 is released: tagged at `07e3da7` with a GitHub Release, after all
+four CI jobs passed on that commit, and `docs/v0.4-final-state.md` is its record.
+The two audits are below. `main` is pushed and level with
+`origin/main`. Open on purpose: `commit` has no JSON form; the three v0.4
+questions — whether an explanation is ever stored, whether the prompt gets a unit
+of its own, and how the evidence alone is read once a model is configured; and the
+v0.5 ones the final-state doc lists — export/import, the proposal route, `--json`
+on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.5 Unit 1: the Developer Memory design freeze, 2026-10-06
+
+The whole of it is `docs/v0.5-design.md`; this is the summary a later session
+needs before reading that. **No code, no schema, no CLI, no test and no
+benchmark was touched** — the unit's own rule, and the deliverable is the
+document.
+
+**The definition, which is the unit's success criterion.** A Developer Memory is
+a statement a person made about this project, admitted by that person's explicit
+act, kept with the subject it is about and the evidence it was made from (which
+may be none), and stored apart from the evidence layer. The operational test that
+separates it from everything else: **if the tool can derive it, it is not
+memory** — and its corollary, **evidence does not become memory by
+accumulating**.
+
+**What was decided, and the reasons that matter later:**
+
+- **Three kinds, not two.** Memory is neither a historical fact nor an
+  interpretation but curated knowledge — authored, admitted, provenance-carrying,
+  revocable — because it is the one thing the tool cannot check and must never
+  present as derived. v0.4's interpretation contract stands unchanged; the
+  crossing into memory is a person's confirmation and nothing else.
+- **Only a person writes memory.** Route A (AI extracts memory from history) is
+  rejected on the definition, not on model quality: a memory is authored, and an
+  extracted row is not that. v0.5.0 ships the human route only; proposals are a
+  later unit, never stored, never authoritative.
+- **The loop is broken at the confirmation edge** — no model output reaches the
+  store without a person, and memory never becomes evidence.
+- **Evidence always wins.** A memory never filters, reorders or reinterprets the
+  evidence, and the tool never resolves a conflict; it reports the ones it can
+  see (missing subject, unresolvable citation, span) and says what it cannot.
+- **Storage: the same SQLite file, its own table, with provenance — and the
+  first cache exception.** This is the load-bearing new fact about the project:
+  every evidence row can be rebuilt from git, and a memory row cannot. So
+  `analyze`, `ast`, `clear_history` and a schema rebuild must all preserve it,
+  and the docs must stop saying "every row can be rebuilt" without the exception.
+  Two hazards named, not fixed: moving the repository (the database is keyed on a
+  path digest) and a `--db` shared across repositories.
+- **No memory types in v0.5.0.** Applied the project's own test — a rule with no
+  case can be deleted without anything going red: no behaviour branches on
+  Decision / Constraint / Pattern / Preference / Lesson / Context, so the
+  statement's own words carry its force. The candidate list is kept in the
+  document so a type that earns a behaviour can come back.
+- **Lifecycle: active / superseded / invalidated.** No stored `candidate` (an
+  unconfirmed draft is not persisted at all), no `archived` (a visibility
+  preference, not a truth status), no delete, no in-place edit — a correction is
+  a supersede.
+- **Time: three timestamps, three meanings.** `admitted_at` and `ended_at` are
+  facts about the store; `since` is the author's claim about the project, and
+  absent means unknown rather than defaulted.
+- **Memory reaches `explain` as its own labelled section**, printed in both
+  paths, selected and counted like v0.4's view, attributable by id, and never
+  citable as evidence (the unchanged semantic pass refuses that for free).
+- **The architecture boundary, as five rules**: evidence never reads memory;
+  memory never enters the evidence tables; memory is never evidence for a memory;
+  the model never writes memory; memory never overrides evidence.
+
+**Two findings from reading the real tree, worth keeping:** Developer Memory had
+never been designed — the only trace is one README roadmap row, and the "memory
+is for much later" note in *Next* is about the AST pass's RAM; and the database's
+"every row can be rebuilt" sentence was true until this design and is now true of
+the evidence tables only.
+
+## v0.5 Unit 2: the memory data model, 2026-10-06
+
+`docs/v0.5-storage-design.md` is the whole of it — the DDL is frozen there and
+written to no file. Again: **no production code, schema, CLI, test or benchmark
+was touched.**
+
+**Two facts about the current code decided parts of it**, and both came from
+reading the storage path rather than from the design:
+
+- `open_analysis` **already** refuses a database whose `meta.repository_root` is
+  not the repository being read, so the evidence side isolates by repository
+  today. Memory inherits that identity (the resolved path string) instead of
+  inventing one — no digest, no root sha, no remote URL: each of those is a
+  heuristic that breaks on rebase, shallow clones or two clones of one project.
+- `analyze` **takes a database over** — `prepare_database`, `write_commits`, then
+  `set_meta("repository_root")` — and `prepare_database` rebuilds by dropping
+  everything in `TABLES`. So the memory tables stay out of `TABLES`, and that
+  list is the whole of the cache exception: a list can be read and checked, a
+  "drop everything except memory" condition is one edit from dropping it.
+
+**Decided, with the reasons that matter later:**
+
+- **Identity: a UUID4 in text form**, immutable, addressed by unique prefix like
+  a sha. A rowid would have to be renumbered by the export/import that Unit 1
+  already knows is coming, which would rewrite every `superseded_by` link; a
+  content hash collides exactly where two identical statements must be two rows.
+- **Two tables**: `memories` and `memory_citations`, with the subject structured
+  (kind + path/qualname/sha) because it is *looked up by*, unlike a citation,
+  which is *compared for equality* and stays a v0.4 form string.
+- **No foreign key into the evidence tables**, and this is load-bearing rather
+  than tidy: `write_commits` deletes commits a rewrite removed, so a cascade
+  would delete memories and a plain FK would make `analyze` fail. A citation is a
+  historical reference, checked at admission and re-checked at read.
+- **Absence speaks**: no citation rows is the statement "no evidence attached",
+  and the three states (none / resolves / no longer resolves) are rendered
+  differently — the v0.3 rule about absence, applied to provenance.
+- **Two version stamps.** `schema_version` stays `"4"` and v0.5 moves it not at
+  all; memory carries `memory_schema_version` = `"1"`, owned by the memory
+  module. This refines Unit 1 §12.2: the evidence rebuild never has to know
+  memory exists. A newer memory stamp makes memory refuse and evidence keep
+  working; a stamp missing under existing tables refuses rather than guesses.
+- **`--db` across repositories**: per-row ownership, **refuse the write**, filter
+  and report the read (count and paths), and `adopt --from <path>` as the sixth
+  act — added to Unit 1's five, because the move hazard Unit 1 left open needs
+  one. Rejecting the read was rejected (recovery requires reading a mismatched
+  database); allow-and-report was rejected (reporting after storing is too late).
+- **Recovery changes one evidence-side message**: a corrupt database is no longer
+  "delete it" — that advice now destroys knowledge — so the tool must say the
+  file could not be read and that it should be copied first. A message, not a
+  fact.
+- **Temporal rules at the data layer**: `since` absent means unknown (never
+  defaulted to admission time), and *in force* is compared **by time, not by
+  ancestry** — reachability would be exact and would make every read walk the
+  parent graph; the limit is named in the document rather than hidden.
+
+## v0.5 Unit 3: the memory command line, 2026-10-06
+
+`docs/v0.5-cli-design.md` is the whole of it. **No production code, schema, CLI,
+test or benchmark was touched** — the interface is frozen in the document and
+written nowhere else.
+
+**Three facts about the existing interface decided parts of it:**
+
+- `tests/test_readme.py`'s `_registered_commands()` walks
+  `app.registered_commands` only, so **a sub-app is invisible to it**: six new
+  commands under `memory` would ship undocumented while that test stayed green —
+  the exact drift it was built to catch (the co-change story). The implementing
+  unit must make it walk `registered_groups` too.
+- `explain`'s offline path prints **the evidence bundle's JSON**, not a prose
+  block, so memory cannot be appended to it as a section: it becomes one more key
+  of the printed object, and the model path gets the prose section.
+- Read JSON carries `repository` and `head_sha` at the top level, and `commit.py`
+  already has the three prefix refusals — the memory commands reuse both rather
+  than inventing either.
+
+**Decided:**
+
+- **One group, six acts** — `archaeology memory create|list|show|supersede|
+  invalidate|adopt`, the names being Unit 1's five plus Unit 2's adopt.
+- **The subject is four flags** (`--about-repository`, `--about-path`,
+  `--about-definition` with a path, `--about-commit`) and **the evidence is six**
+  (`--cite-commit|file|definition|range|cochange|absence`). Flags, not
+  `kind:value` strings: a Windows path contains a colon and a range's ref already
+  contains one, so a prefixed form would need a parser and would stop being
+  discoverable in `--help`.
+- **A subject must resolve against the stored history** — a memory nothing can be
+  found by is a memory nobody reads — so the path refusal reuses the existing
+  `nothing in the stored history touched …` sentence, and a definition subject
+  says to run `ast` first.
+- **`supersede` is its own command**, not `create --supersedes`: one command per
+  frozen act, with `create`'s option objects shared so the two cannot drift.
+- **Writes print a labelled summary and take no `--json`** (the tool's writer
+  convention; a machine-readable write would be a project-wide change, recorded
+  as deferred). The id is the summary's first line.
+- **The canonical memory object is one shape in three places** (`list`, `show`,
+  `explain`), with `resolution` ∈ resolved / unresolved / **not_checked** — three
+  words because a list that skipped the expensive checks must not read like one
+  that found nothing.
+- **`explain` gains a `memory` key, absent when empty** — which closes Unit 1
+  §21's open question, follows `selection`'s absent-is-a-statement rule, and
+  keeps the README's existing `explain` block (a repository with no memories)
+  byte-identical.
+- **Two groups in that section** (`in_force` / `not_provably_in_force`), because
+  merging them is the one thing the temporal rule exists to prevent.
+- **`related_memory`** is the model's field — the only way an answer may point at
+  a memory, checked against the section it was shown; a memory citation in
+  `evidence` stays refused by the unchanged semantic pass.
+- **stdout carries the block or the JSON and nothing else; stderr carries notes
+  and `Error:` sentences; exit codes are 0 and 1 only.** A long statement is cut
+  in the terminal **with an explicit marker** and never in JSON.
+
+## v0.5 Unit 4: the memory store is built, 2026-10-06
+
+`src/codearchaeology/memory.py` (the tables, the acts, the repository identity,
+the version stamp) and `tests/test_memory.py` (58 tests). `analysis.py` and
+`storage.py` were touched, and only in the two ways the design named: the
+corruption sentence, and the cache exception. **No command line, no prompt, no
+provider** — Unit 3's commands are still unbuilt, and the citation resolution
+rules (§4.3 of the storage freeze) belong to the unit that adds them, because
+resolving a `range` needs git and a `cochange` needs the analysis.
+
+**Two traps this unit found, both invisible until something was run:**
+
+1. **`meta` is in `TABLES`, so an evidence rebuild was dropping the memory
+   version stamp.** The tables survived — they are not on the list — and the
+   stamp did not, which left them *unstamped*: a state the module refuses to
+   read, by design. A rebuild would therefore have bricked every memory in the
+   database, silently, and no design document predicted it. The fix is in
+   `storage.prepare_database`: a rebuild keeps every `meta` row it does not own
+   (`_foreign_meta` / `_restore_meta`), so the evidence keys are recreated and
+   somebody else's keys are carried across. The rule is written generically on
+   purpose — naming `memory_schema_version` there would make `storage.py` a
+   second place that knows memory's shape.
+2. **A rule with no case.** `supersede`/`invalidate` checked that the target
+   memory belongs to the repository being written for, after the database-level
+   rule had already refused any database holding another repository's memories —
+   so the second check could never fire. Removed, with a comment saying where the
+   rule actually lives. (The project's own test: a rule with no case can be
+   deleted without anything going red.)
+
+**Also decided while building, and worth keeping:**
+
+- **`adopt` does not go through the write refusal.** That refusal exists to stop
+  a database being mixed; `adopt` is the act that repairs a mixed or moved one,
+  so it checks the stamp and nothing else.
+- **The reverse lifecycle link reads from the other side.** The row carrying
+  `superseded_by` is the *old* one, so "what did this successor replace" is a
+  query for rows naming it — the first version selected the wrong set and the
+  smoke test caught it immediately.
+- **`prepare_memory` refuses a database with no analysis** rather than creating
+  `meta` itself: memories are kept beside an analysis, and this module must not
+  create an evidence table to have somewhere to write.
+- **The corruption sentence replaced "delete it"** (`analysis.py`, both the read
+  and the `analyze` paths). `IntegrityError` is re-raised rather than reported as
+  an unreadable file: the tool's own data breaking a constraint is a defect, and
+  hiding it behind "could not be read" would lose the bug.
+- **The memory stamp is checked before every read and write**, and a stamp from a
+  newer tool refuses memory while leaving the evidence readable — which is what
+  the two-stamp design was for.
+
+## v0.5 Unit 5: the first slice a person can use, 2026-10-06
+
+`memory create`, `memory list`, `memory show`, plus `memory_checks.py` (a subject
+and a citation held against the evidence), `memory_view.py` (the block, the
+object, the closing sentence) and the `memory` sub-application in `cli.py`.
+**Nothing in the loop needs a model** — Core First, made visible: with no
+endpoint configured, a memory is written, listed and read back, and the README
+blocks show exactly that. 769 tests, of which 43 are the command line's.
+
+**Five things the build found, and what they changed:**
+
+1. **The README checker was blind to sub-applications.** `_registered_commands`
+   walked `app.registered_commands`, so the three new acts could have shipped
+   documented nowhere while that test stayed green — the exact drift it was
+   written to catch for co-change. It walks `registered_groups` now.
+2. **The checker split command lines with `.split()`.** A memory's statement is
+   prose and has to be quoted, and a plain split hands the tool its first word;
+   it uses `shlex.split` now, the way a shell would.
+3. **A created id cannot be written down.** A block that runs `memory create`
+   cannot show the id it will print, so the checker substitutes by value for the
+   fixture's own memories (so two memories still read as two) and by shape for
+   any other, and it puts a *documented* id back to the real one when a block
+   addresses a memory — the same way it already handles the repository's path.
+4. **The fixture repositories had no identity of their own.** `memory create`
+   records the identity the repository's git *configuration* gives, so without
+   one a block showing `Author` would print whatever machine built the fixture.
+   `sample_repo._configure` now sets a name and an email beside the two settings
+   it already set.
+5. **Two orderings and a refusal were wrong until something ran.** Two memories
+   admitted in the same second ordered by their random ids, so the admission time
+   keeps its microseconds and the order uses them; `find_memory` asked the store
+   before it checked what was typed, so a malformed prefix on an empty store got
+   the wrong sentence — what the person typed is checked first.
+
+**Four refinements of the frozen design, recorded as refinements:**
+
+- Unit 3 §9.1 showed no evidence line for a memory with none; the list prints
+  `evidence: none attached`, because the three states have to be readable.
+- Unit 3 §8.1's `since` example was ambiguous about which date it carried: a
+  commit gives `{"commit", "commit_date"}` and an author's date gives `{"date"}`.
+- Unit 3 §6.2 broke ties by `memory_id`; the order is by admission time and then
+  by id, which is still deterministic and is the order they were written in.
+- Unit 3 §9.2's `Since` line prints the date rather than a full timestamp,
+  because the date is what the temporal rule compares.
+
+**What is deliberately not here:** `supersede`, `invalidate` and `adopt` (their
+acts are Unit 4's and their commands are the next unit), `explain` reading
+memories, and the memory section in its prompt. A memory's citations *are*
+resolved at admission and re-checked at read — the six rules of
+`docs/v0.5-storage-design.md` §4.2 live in `memory_checks.py` — so the only part
+of provenance left is the one `explain` will do.
+
+## v0.5 Unit 6: the lifecycle, 2026-10-06
+
+`memory supersede` and `memory invalidate` — the last two acts a memory has —
+with `tests/test_memory_lifecycle.py` (28 tests) holding the state machine, and
+the blocks for both in both READMEs. 803 tests green.
+
+**The state machine, as it is now enforced.** `active` is the only state an act
+can be performed on; `superseded` and `invalidated` are terminal, and the refusal
+says so in words ("a memory that has ended stays ended — record a new one
+instead") rather than leaving a reader to guess whether a second act did
+something. Supersede writes two rows in one transaction — the successor admitted,
+the old row closed with the moment and a link — and the moment is *the same
+value* on both, so the successor's admission and the old memory's end are the
+same instant.
+
+**The cycle question, answered by construction rather than by a check.** A
+successor is always a memory the act has just admitted, and only an active memory
+can be acted on, so a link can only ever point forward: no sequence of acts can
+close a loop. The test walks the chain from the oldest memory to the active one
+and asserts no id repeats. What a *hand* writes into the table is another matter
+and the schema does not pretend to see it — a CHECK cannot look at another row —
+which is why Unit 2 §5.2 put the rule in the act and the test says so.
+
+**What is deliberately not here:** `memory adopt` (designed, Unit 3 §6.6), and
+`explain` reading memories. Nothing about the storage layer changed in this unit
+— the acts were Unit 4's and their tests were already there; what this unit added
+is the commands, the chain and cycle cases, and the rendering of both states in
+the two blocks.
+
+## v0.5 Unit 7: provenance, 2026-10-06
+
+`memory_checks.subject_resolution`, the subject's own marker in both views and in
+the JSON, and `tests/test_memory_provenance.py` (9 tests). 812 tests green. No
+schema moved: `memory_schema_version` is still `"1"` and the evidence stamp `"4"`.
+
+**The subject was the half that had never been re-checked.** A citation has been
+resolved at admission and re-checked at read since Unit 5; the subject was
+resolved at admission and never looked at again, so `memory show` printed a
+subject as though it were still there after the rewrite that removed it — the
+silence Unit 1 §7.2 and Unit 2 §4.1 both forbid. All four kinds are one indexed
+query, so the subject is checked in the list too, and it never reads `not
+checked`: that word belongs to the range and the co-change pair, the two checks a
+list cannot afford.
+
+**A finding the tests made, recorded as a refinement.** `CHEAP_KINDS` was
+`commit, file, definition`, so a list reported an `absence` citation as `not
+checked` — for the one kind that is a word held against the tool's own four
+words, with no repository in it and nothing that can have moved. Unit 2 §4.3
+enumerated five of the six kinds and left the sixth unnamed; it is on the cheap
+list now, because "we did not look" is a false statement about a check that costs
+nothing. The other refinement is Unit 3 §8.1's object: the subject gained
+`resolution`, the same three words the citations carry and in the place a reader
+already looks for them.
+
+**The prohibition, which was true and untested.** "Memory is never evidence for a
+memory" (Unit 1 §13.2 rule 3) held only because the citation vocabulary has no
+memory kind — true, and written down nowhere that fails a build. Three tests hold
+it now: the vocabulary and the two foreign keys into `memories` (the owner column
+and the lifecycle link, and nothing else); a memory's id tried as a citation of
+every one of the six kinds, refused six times in the sentence its kind already
+gives; and the disguise that would actually fool a reader — a successor that
+inherited the citations of the memory it replaced, which it does not, because a
+successor carries only what its own act cited.
+
+**The direction is a test too, and Unit 2 §12.5 had asked for it.** The evidence
+modules do not import the memory ones, held by reading the package's own sources
+the way `test_offline.py` holds the network rule, with a guard that the scan can
+see an import it is looking for — otherwise the check would pass by looking for
+nothing.
+
+**Two stale counts, fixed and then made unfixable.** The status block said
+"thirteen commands" and the roadmap row named three of the five memory acts, both
+left behind by Unit 6; the Chinese module tree said "ten commands" while the
+English one said thirteen. The counts are now right, and the module tree says
+"its commands" rather than a number — the line has been wrong twice, and a number
+that must be updated by hand is a number that goes stale again.
+
+**What is deliberately not here:** `memory adopt` (designed, Unit 3 §6.6) and
+`explain` reading memories, which are the next units. A citation is still
+reported and never repaired, and nothing in the evidence layer changed.
+
+## v0.5 Unit 8: memory reaches `explain`, 2026-10-06
+
+`memory_section.py` (which memories belong beside a commit, and how they are
+shown), the memory half of `explain` in all four of its paths, `related_memory`
+in the answer schema, and `tests/test_memory_explain.py` (26 tests). 840 tests
+green. The evidence layer was not touched: `context.py`, `selection.py` and the
+bundle are the bytes v0.4 built.
+
+**The separation is structural, and that is the whole unit.** The section is a
+sibling of `evidence` in the object and a separate labelled block in the prompt,
+never a key inside the bundle — so `validation`'s semantic pass refuses a memory
+cited as evidence for free, and a test says so. The model is shown the section
+under a heading that states what it is, and the only way an answer may point at
+one is `related_memory`, whose ids are checked against what it was shown.
+`validation` never learns what a memory is: the caller passes the ids, so the
+pass that checks the evidence still cannot read the store.
+
+**Where each piece lives, and why.** `memory_section.py` is on the memory side
+of the line (it reads the store), so Unit 7's structural test gained it — and
+that test earned its keep immediately: it failed on the new module the moment it
+appeared, which is exactly what it is for. `memory_view.shown` is now the one
+place a memory is read back, so `memory list`, `memory show` and the section
+cannot answer differently about the same row. `since_moment` was split out of
+`since_date_of` because the temporal rule compares moments and the rendering
+shows dates.
+
+**The temporal rule is the storage freeze's, to the letter**: a known start at or
+before the commit, and not ended before it, both compared by time. A superseded
+memory is therefore *in force* at a commit it predates and is shown as history —
+"superseded …, replaced by …" — which is §9.2's requirement, and the section
+prints it rather than hiding it.
+
+**Decisions taken while building, worth keeping:**
+
+- **The cap is 5**, like the context builder's own caps, and everything dropped
+  is counted: `memory.selection` in the object, a line in the block, and nothing
+  in the prompt that would let the model read a truncated list as complete.
+- **The subject ranks above the citation**: commit, definition, path (current or
+  historical name), cites-this-commit, repository. A memory matching several
+  takes the most specific it matches.
+- **A definition is matched by qualified name**, the looseness the `definition`
+  citation already has and the storage freeze states.
+- **An unreadable memory store degrades `explain`, it does not stop it.** The
+  refusal is a stderr note and the evidence prints without a section — "evidence
+  still works" is in the frozen error table, and a newer memory stamp must never
+  cost a reader an explanation.
+- **`related_memory` is optional and may be empty**, and the schema lists it, so
+  a model that sends it empty is answering the question.
+
+**The gap this unit found, and asked about rather than filled.** `since` is the
+author's claim about the project (Unit 1 §9.1), the section's whole two-group
+structure is built on it, and **no command could set it**: `memory create` had
+the four subject flags and the six citation flags and no
+`--since-commit`/`--since-date`. Every memory written through the command line
+was therefore "related, not provably in force", and the in-force group was
+reachable only through the API — implemented, tested, unexposed. The command line
+was frozen by Unit 3 without those flags and the standing rule is to ask rather
+than add, so the unit stopped and asked. **The user chose to add them, and they
+are below.**
+
+**What is deliberately not here:** `memory adopt`, export/import, subject
+filtering on `list`, `--json` on the writing acts, and `--no-memory` on `explain`
+(all still open questions of Unit 3 §15).
+
+## v0.5 Unit 10: hardening, and three things the measurements found, 2026-10-06
+
+`memory adopt` (the sixth act, designed in Unit 3 §6.6 and unbuilt until now),
+`benchmarks/memory_benchmark.py`, `tests/test_memory_adopt.py` (12 tests) and
+`tests/test_memory_hardening.py` (12). 915 tests green. The evidence layer was
+not touched.
+
+**`memory adopt` closes the two states a real store meets.** A repository that
+moved, and a database two repositories were pointed at. Both leave memories
+naming a path this checkout does not have, and the answer is the same: the rows
+are kept, the read says whose they are, and `adopt --from` is the explicit act
+that says they are the same project at a new path. The move recipe has three
+steps and a middle state, and **all three are tested end to end** — a recipe
+nobody runs is a recipe that is wrong in the second step. `analyze` now says
+what it is about to leave behind, at the one moment the tool itself can put
+memories out of view: that note comes from `cli.py` and not from `analysis.py`,
+because the evidence layer must not read memory even to warn about it.
+
+**Three findings, all from running things rather than from reading them:**
+
+1. **`memory list` was linear, and that is a defect rather than a design.** It
+   read back every memory in the store to print twenty of them: 843ms at ten
+   thousand, 1.36s at a hundred thousand. Two fixes, both measured before and
+   after. The read now stops at the slice (`read_memories(limit=...)`, with
+   `count_memories` as the other half of one shared selection, so a count and a
+   read cannot disagree about what is counted), and the child rows are fetched
+   **by the ids that were read** rather than by repeating the selection as a
+   subquery — which is what `storage._assemble` does, and whose reason (SQLite's
+   ceiling on parameters) is kept by batching at 500. Sliced: 495ms → 0.1ms.
+   Whole store: 748ms → 340ms. `list` is now flat: 78ms at a hundred thousand.
+2. **The index was not the problem, and the plan said so.** `EXPLAIN QUERY PLAN`
+   showed a temp B-tree for the last two ORDER BY terms, which looked like the
+   cause; a covering index removed the sort and changed the time by nothing
+   (495ms either way), because the cost was the two child reads. The index is
+   therefore unchanged — no schema change, no stamp move — and the trap is worth
+   keeping: a plan that looks wrong is not a measurement.
+3. **A stamp with no tables read as an empty store.** A database whose memory
+   tables were dropped by hand still carried `memory_schema_version = "1"`, and
+   `_readable` returned False — so `memory list` said "Memories (0)" to somebody
+   who had written a hundred. That is the silent loss this whole phase exists to
+   prevent, and it now has its own state (`_MISSING_TABLES`) and its own refusal:
+   the store claims knowledge it no longer has, and it is asked to account for it
+   rather than being read as empty. Only a hand can reach the state; the tool
+   never drops a memory table.
+
+**What is measured and left alone, with the fix named.** `memory list --json` is
+linear by contract (4.74s at a hundred thousand memories — a program that asked
+for the list asked for all of it), and `explain`'s selection reads the whole
+store once (1.11s at the same scale, because a file's earlier names and a
+definition's name are not a query the schema can answer alone). Both are in the
+README's table with the numbers; subject filtering is the first thing queued
+after v0.5.0, and a SQL prefilter for the section is the second.
+
+**The exception cases, one test each**, and the rule they follow: a hand-written
+lifecycle cycle reads without hanging (nothing walks a chain — every read is one
+query); a superseded row naming a memory that does not exist **cannot** be
+written, because the key *between* memories is real (the key the design refused
+is the one into the evidence tables); an interrupted `adopt` moves nothing and
+records nothing, and an interrupted `supersede` writes neither row — both
+injected by a trigger rather than a monkeypatch, so the failure comes from SQLite
+itself; the same statement twice is two memories, because identity is the id and
+not the words, which is the case that rejected a content hash when the store was
+designed; and a citation of a commit that never existed is kept and unresolved,
+exactly as a rewritten history is.
+
+## v0.5 Unit 9: the boundary, held by tests, 2026-10-06
+
+`tests/test_memory_boundaries.py` (41 tests), the file the phase's risk is held
+in. The risk is not that a memory cannot be written; it is that memory leaks the
+*other* way — into a bundle, a citation, a prompt, or the store through a model's
+answer — because every one of those is invisible. A bundle with a memory row in
+it looks exactly like a bundle. 889 tests green.
+
+**The strongest form of "the evidence never reads memory" is to break memory and
+prove nothing notices.** Every evidence command — `analyze`, `ast`, the eight
+reading commands and `explain` — is run against a database whose memory store is
+unreadable (a version stamp from a newer tool, which is a state a reader really
+meets), and every one has to work. It is `test_offline.py`'s device pointed the
+other way, and it catches a module that quietly read the store where an import
+scan would not.
+
+**Determinism, compared as text.** Two databases differing in one thing — one
+holds three memories and one holds none — and the bundle, the model's view, and
+the output of all eight reading commands are compared byte for byte. A count, an
+ordering or a row that moved anywhere because of what people wrote fails here.
+The offline `explain` answer is the one output that differs, and it is held to a
+single added key.
+
+**Who may write, held at the level of who may call.** `admit`, `supersede` and
+`invalidate` are the only ways a row is created or changed, so the rule is a
+statement about imports: exactly one module in the package reaches them, and it
+is `cli.py`. `provider.py` imports nothing from the package at all — no store, no
+database, no path to either — so "the model never writes memory" is a sentence
+about what the provider *is* rather than a rule it obeys. A model run is also
+checked behaviourally: the answer is written the way a helpful model writes one
+(it restates a memory, proposes one, relates itself to one) and both memory
+tables are byte-identical afterwards.
+
+**The validator, and the one thing it cannot do.** A memory's id is refused as
+evidence under all six kinds. But a model that *paraphrases* a memory into an
+`observed_changes` entry with a real citation beside it passes every pass there
+is, and the test says so rather than asserting a defence the tool does not have —
+which is the more expensive of the two mistakes (`test_boundaries.py`'s own
+argument). What holds instead is the structure, and the test asserts that too:
+the same words appear twice in one block, once as the model's reading and once as
+the tool's copy from the store, under a heading that says what a memory is.
+
+**The rendering boundary, pinned.** One model run, and the block is checked for
+three labels that must not be confusable: the answer opens with the
+interpretation note, the evidence sits under `Observed`/`Possible`/`Unknown` with
+its citations, and the memory section has its own heading and closes with the
+sentence the memory commands end with. In the JSON the memory's id appears in
+exactly two places — under `memory` and under `explanation.related_memory` — and
+nowhere else in the document, which is checked by walking the object and
+collecting the paths.
+
+**Two documentation changes, both honesty rather than feature:** principle 8 now
+names this file as the boundary's holder, and both READMEs gained a known
+limitation for the paraphrase case — a limit that is now written down rather than
+waiting to be discovered.
+
+## v0.5 Unit 8b: the two time flags, 2026-10-06
+
+`memory create` and `memory supersede` gained `--since-commit` and
+`--since-date`, as one pair of shared option objects — the same way the subject
+and citation flags are shared, so the two commands cannot drift. The user chose
+this over leaving the temporal layer unreachable; it is the one piece Unit 8
+found missing and did not add on its own.
+
+**What the flags do, and where each rule lives:**
+
+- **The commit is resolved at admission**, by `memory_checks.resolve_since_commit`
+  — the same `load_commit` a commit subject goes through, so a prefix that names
+  nothing is refused with the tool's existing sentence and what is stored is the
+  full sha. A commit a *later* rewrite removes is not repaired; the read then
+  says the span cannot be shown to cover anything, which is the rule Unit 2 §6
+  already froze.
+- **The two are exclusive in the store, not in the command line.** The refusal
+  is one sentence in `_checked` ("a memory's start is one thing: a commit or a
+  date, not both"), where the schema's own CHECK lives, so an API caller gets the
+  sentence rather than a constraint error and there is one rule rather than two.
+- **`_checked_date` now checks three things rather than one**: the shape, the
+  round trip against `date.isoformat()`, and the day itself. `20240306` is a date
+  Python reads and a spelling the column's `GLOB` rejects — shape-only checking
+  would have stored it and let the constraint error surface as a defect — and
+  `2024-13-45` passed the old check while naming a day that never happened, which
+  the temporal rule would then have compared as if it had. The flag is what made
+  this worth fixing: it is the first time a person can type one.
+
+**Documented the way the contract wants it:** the `create` block in both READMEs
+now carries `--since-commit 392cc0db` (its output is unchanged, so the flag costs
+the block no lines), the prose states the rule and the "absent means unknown"
+semantics, and the known-limitations entry that said no command could set a start
+was deleted rather than reworded — it had stopped being true.
+
+## v0.5 Unit 11: the documentation and the contract, 2026-10-07
+
+`docs/v0.5-final-state.md` (the record), both READMEs, `CHANGELOG.md`,
+`tests/test_contract.py` (5 tests) and the version. 920 tests green, of which 237
+are the memory layer's and 73 the README contract. No production code was
+touched: the unit is what the tree says about itself.
+
+**The JSON contract had been checked by hand, and the v0.4 audit said so in its
+own record.** It is a test now, and it holds three things: every reading command
+prints exactly one JSON document whose top-level keys are the ones the READMEs
+show (`timeline` through `memory show`, and `explain` with and without a related
+memory, because absent-when-empty is a documented statement); the canonical
+memory object is the same key set in all three places it appears — `memory show`,
+inside `memory list`, inside `explain`'s section; and `commit`'s missing `--json`
+is pinned as the gap both READMEs state, so it cannot close or widen silently. The
+same file holds the exit contract — a refusal is `Error: …` on stderr, exit 1 and
+nothing on stdout, which is what keeps `--json` parseable when a note is due — and
+the documentation contract: three phrases that must stay in both READMEs, one per
+rule a reader acts on (a memory cannot be rebuilt, a memory is never evidence, a
+model never writes one).
+
+**The "every row can be rebuilt" sentence was in four places, not one.** The
+analyze section ("rebuilt from scratch — the structure layer included"), the
+re-run section, the database section and the memory introduction, in both
+languages; each now says what the exception is, and the Chinese and English
+versions were edited together rather than one being left a release behind. Two
+new statements were added where a reader would otherwise have to infer them: a
+memory exists in exactly one place and deleting the file destroys it (a known
+limitation, not only a paragraph in the middle of the READMEs), and the provider
+cannot reach the store at all — principle 8's other direction, which Unit 9 held
+with a test and the README did not yet say.
+
+**The version bump came with the CHANGELOG, and that is a decision worth
+keeping.** `tests/test_cli.py` compares the CHANGELOG's newest section against the
+five copies of the version, so an entry for a release that has not been bumped
+fails the build — the unit that writes the entry is therefore the unit that bumps
+the version, and the release that follows is commit, push, CI, tag, Release. The
+entry is dated 2026-10-07; if the release lands on a later day, the date in the
+heading is the one thing to correct, because the project's convention is that it
+is the release commit's date.
+
+**A trap, and it cost one test iteration.** A test that pins a sentence in a
+README has to squeeze whitespace out of both sides first: the Chinese phrase
+chosen for the memory-is-not-evidence rule straddled a line break, so the phrase
+was in the file and the check could not see it. The fix is in
+`tests/test_contract.py::_squeezed`, with the reason in its docstring — a checker
+that fails on a re-wrap is a checker people edit the sentence to satisfy.
+
+**What is deliberately not here:** the release itself, and the two optimisations
+the final-state doc names as the known debt (subject filtering on `list`, a SQL
+prefilter for `explain`'s section). Both are measured, both are written down with
+their numbers, and neither is a v0.5.0 change.
+
+## The v0.5 release audit, 2026-10-07
+
+Unit 12. Nineteen checks, each run rather than assumed. What each one was run
+with, and what it found:
+
+| Check | Run with | Found |
+|---|---|---|
+| Core tests | `uv run pytest` | **921 green**, 258s locally |
+| The Python floor | `uv run --python 3.11 pytest` | **921 green**, 247s — the whole suite, not a subset, because "3.11 is supported" is a claim about all of it |
+| The memory layer | the eight `test_memory*.py` files, counted per file | **237** of the 921 (`test_memory` 59, `test_memory_cli` 49, `test_memory_lifecycle` 28, `test_memory_explain` 27, `test_memory_boundaries` 41, `test_memory_adopt` 12, `test_memory_hardening` 12, `test_memory_provenance` 9) |
+| The AI layer | the seven v0.4 files | **183**, unchanged from v0.4 — v0.5 touched no AI-layer test |
+| CLI contract | `test_readme`, `test_contract`, `test_cli` | sixteen commands registered, a group's six acts included; every one documented in both READMEs; `--help` works for all of them; a refusal exits 1 with `Error:` on stderr and nothing on stdout |
+| JSON contract | `tests/test_contract.py` | every reading command prints one document with the documented keys; one memory object in all three places it appears; `commit`'s missing `--json` pinned as the gap it is |
+| README contracts | `test_readme.py` | **73** tests green: every console block in both languages replayed against the fixtures, and every registered command's section required |
+| The memory boundary | `test_memory_boundaries.py` | 41 tests: the five rules each with its case, and the paraphrase limit stated rather than asserted away |
+| The cache exception | the rebuild and preservation tests in `test_memory.py`, `test_memory_hardening.py`, `test_memory_adopt.py` | a schema rebuild keeps the memories and their stamp; `analyze` and `ast` leave the store identical; `TABLES` holds six evidence tables and no memory table |
+| no-AI Core | `test_offline.py` | 15 tests: `provider.py` is the only module importing a networking one, and every reading command runs with `socket.socket`, `create_connection` and `getaddrinfo` taken away |
+| Provenance | `test_memory_provenance.py`, `test_memory_explain.py` | a subject and every citation checked at admission and re-checked at read, never repaired; the model's `related_memory` checked against the section it was shown |
+| Documentation | both READMEs, `CHANGELOG.md`, `docs/` | the cache exception stated wherever the database is described; memory-is-not-evidence and AI-is-not-memory stated in both languages and pinned by `test_contract.py`; `docs/v0.5-final-state.md` is the record |
+| Version | the five copies `tests/test_cli.py` compares | **0.5.0** in `pyproject.toml`, `__version__`, both READMEs and the CHANGELOG's newest section |
+| Schema | `storage.SCHEMA_VERSION`, `memory.MEMORY_SCHEMA_VERSION`, `storage.TABLES` | **"4"** and **"1"** — the evidence schema unchanged by v0.5, memory's stamp owned by the memory module, and the memory tables not in `TABLES` |
+| Secrets | a scan of the new files and the diff for keys, tokens, private keys and real addresses | clean; the only addresses in the tree are `@example.com` fixtures |
+| git clean | `git status --porcelain` | **not clean, by design**: 16 modified and 18 untracked files, which is the whole of v0.5 waiting for its release commit |
+| main = origin/main | `git status -sb` | level at `f27ebbf`, tree dirty — the branch has nothing to push and the work has nowhere to go until the release commit is made |
+| CI | `gh run list` | the last pushed commit (`f27ebbf`) is green on all four jobs; **the v0.5 tree has never been pushed**, so it has never been through the Ubuntu or Windows runners |
+| Release tag | `git tag -l` | `v0.4.0` is the newest; `v0.5.0` does not exist yet, and the release order says it goes on a commit whose own CI is green |
+
+Two things the audit is worth keeping for, beyond the rows:
+
+- **The floor was checked on the whole suite, not a subset.** v0.4's audit ran the
+  AI files separately and counted them; here the 3.11 run is the entire suite,
+  because a supported interpreter is a claim about everything that runs on it.
+- **CI is the one check that cannot be done locally, and this tree has never been
+  through it.** The v0.4 audit found the same thing and said so: the release order
+  puts the tag after that run rather than before it, which is why the last three
+  rows — the clean tree, `main = origin/main`, and the tag — are the release's own
+  first steps rather than checks that can be satisfied in advance.
 
 ## The v0.4 release audit, 2026-10-06
 
@@ -53,6 +731,22 @@ Two things the audit is worth keeping for, beyond the twelve rows:
   preference.
 
 ## Where the project stands
+
+**v0.5 is complete in the tree.** Eleven units: three design freezes
+(`docs/v0.5-design.md` the definition, `docs/v0.5-storage-design.md` the data
+model, `docs/v0.5-cli-design.md` the command line), the store
+(`memory.py` — two tables beside the evidence, its own version stamp, the five
+acts), the read side (`memory_checks.py`, `memory_view.py`, the six commands),
+provenance, the `explain` section (`memory_section.py`), the two time flags, the
+boundary suite (`tests/test_memory_boundaries.py`), the hardening unit that built
+`memory adopt` and measured the store from ten to a hundred thousand memories, and
+the documentation and contract unit that produced
+`docs/v0.5-final-state.md`, the READMEs' exception statements and
+`tests/test_contract.py`. The tree is at 921 tests and the version is 0.5.0. Unit
+12, the release audit, is run and green — its nineteen rows are above — and the
+release itself (commit, push, CI, tag, Release) is the next step and the user's
+to call, with the two measured linear costs (`memory list --json`, `explain`'s
+section) the known debt and their fixes named.
 
 **v0.4 has begun, in documents.** Fourteen units are written: `docs/v0.4-problem-definition.md`
 fixes the question — one commit, what happened and which candidate reasons the

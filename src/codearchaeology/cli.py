@@ -16,6 +16,7 @@ from rich.console import Console
 from codearchaeology import __version__
 from codearchaeology.analysis import (
     AnalysisError,
+    open_analysis,
     shallow_clone_note,
     stale_analysis_note,
     stored_head_sha,
@@ -41,7 +42,48 @@ from codearchaeology.explanation import build_prompt, render
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
-from codearchaeology.history import GitError, find_repository_root
+from codearchaeology.history import GitError, find_repository_root, read_identity
+from codearchaeology.memory import (
+    Citation,
+    MemoryNotFound,
+    MemoryStoreError,
+    Subject,
+    admit,
+    adopt as adopt_memory,
+    count_memories,
+    find_memory,
+    foreign_memories,
+    invalidate as invalidate_memory,
+    read_memories,
+    supersede as supersede_memory,
+)
+from codearchaeology.memory_checks import (
+    Evidence,
+    resolutions,
+    resolve_citations,
+    resolve_since_commit,
+    resolve_subject,
+    since_date_of,
+    subject_resolution,
+)
+from codearchaeology.memory_section import (
+    build_section,
+    context_json,
+    prompt_section,
+    related_ids,
+    related_notes,
+    render_section,
+    section_object,
+)
+from codearchaeology.memory_view import (
+    Shown,
+    build_list,
+    build_list_json,
+    build_show,
+    build_show_json,
+    shown,
+    subject_line,
+)
 from codearchaeology.hotspots import DELETED_FILES_NOTE, build_inventory
 from codearchaeology.hotspots import build_inventory_json as build_files_json
 from codearchaeology.hotspots import build_inventory_table as build_files_table
@@ -181,6 +223,10 @@ def analyze(
     note = shallow_clone_note(result.repository_root)
     if note:
         typer.echo(note, err=True)
+
+    mixed = _foreign_memory_note(result.repository_root, result.database)
+    if mixed:
+        typer.echo(mixed, err=True)
 
     typer.echo(f"Repository  {result.repository_root}")
     typer.echo(f"Commits     {result.commits} ({result.file_changes} file changes)")
@@ -687,6 +733,7 @@ def explain(
         raise typer.Exit(code=1)
 
     _warn_if_behind(repository_root, database)
+    section = _memory_section(repository_root, database, context)
 
     settings = Settings.from_environment()
 
@@ -696,9 +743,9 @@ def explain(
         # reads stays the evidence alone.
         typer.echo(NO_PROVIDER_NOTE, err=True)
         typer.echo(
-            build_explanation_json(None, context)
+            build_explanation_json(None, context, memory=section_object(section))
             if as_json
-            else build_context_json(context)
+            else context_json(context, section)
         )
         return
 
@@ -711,13 +758,16 @@ def explain(
         typer.echo(view.note, err=True)
 
     provider = OpenAICompatibleProvider(settings)
-    prompt = build_prompt(view.json)
+    prompt = build_prompt(view.json, prompt_section(section))
 
     try:
         # Checked against the view rather than the bundle: a citation of a row
         # the model never saw is refused, because an answer has to rest on what
         # it was given and not on something that happens to be true elsewhere.
-        explanation = validate(provider.explain(prompt), view.context)
+        # The memory section is checked the same way, by id.
+        explanation = validate(
+            provider.explain(prompt), view.context, related_ids(section)
+        )
     except ProviderError as error:
         # The call never produced an answer. Repeating is the provider's own
         # business, and it has already done as much of it as its settings allow.
@@ -728,7 +778,9 @@ def explain(
         # once more and no further: a second failure of the same kind is not a
         # transient condition, and every attempt is paid for.
         try:
-            explanation = validate(provider.explain(prompt), view.context)
+            explanation = validate(
+                provider.explain(prompt), view.context, related_ids(section)
+            )
         except (ProviderError, ExplanationError) as second:
             typer.echo(f"Error: {second}", err=True)
             typer.echo(
@@ -738,8 +790,595 @@ def explain(
             )
             raise typer.Exit(code=1) from None
 
-    typer.echo(
-        build_explanation_json(explanation, context, view.selection)
-        if as_json
-        else render(explanation)
+    if as_json:
+        typer.echo(
+            build_explanation_json(
+                explanation, context, view.selection, section_object(section)
+            )
+        )
+        return
+
+    block = render(explanation)
+    if section is not None:
+        # After the answer, as its own section, because the two are different
+        # things: the answer is a reading of the evidence and this is what people
+        # stated, printed from the store and never from the model.
+        block = f"{block}\n\n{render_section(section, related_notes(explanation))}"
+    typer.echo(block)
+
+
+# Memory. The acts are Unit 1's five plus Unit 2's adopt; this unit ships the
+# three that make a person's loop complete without a model — write one, list
+# them, read one back — and the rest are their own units.
+
+memory_app = typer.Typer(
+    name="memory",
+    help="Statements people made about this project, kept by the tool and never"
+    " treated as evidence.",
+    no_args_is_help=True,
+)
+
+MEMORY_ABOUT_REPOSITORY = typer.Option(
+    False, "--about-repository", help="The memory is about the project as a whole."
+)
+MEMORY_ABOUT_PATH = typer.Option(
+    None, "--about-path", help="The file it is about, as git writes it."
+)
+MEMORY_ABOUT_DEFINITION = typer.Option(
+    None,
+    "--about-definition",
+    help="A definition's qualified name, inside --about-path.",
+)
+MEMORY_ABOUT_COMMIT = typer.Option(
+    None, "--about-commit", help="The commit it is about. A prefix is enough."
+)
+MEMORY_CITE_COMMIT = typer.Option(
+    None, "--cite-commit", help="A commit the memory was made from. Repeatable."
+)
+MEMORY_CITE_FILE = typer.Option(
+    None, "--cite-file", help="A file the memory was made from. Repeatable."
+)
+MEMORY_CITE_DEFINITION = typer.Option(
+    None, "--cite-definition", help="A definition it was made from. Repeatable."
+)
+MEMORY_CITE_RANGE = typer.Option(
+    None,
+    "--cite-range",
+    help="A changed span, as <path>:<start>-<end>. Needs --cite-commit.",
+)
+MEMORY_CITE_COCHANGE = typer.Option(
+    None,
+    "--cite-cochange",
+    help='One direction of a pair, as "<path> -> <other path>". Repeatable.',
+)
+MEMORY_CITE_ABSENCE = typer.Option(
+    None, "--cite-absence", help="One of the absence kinds. Repeatable."
+)
+MEMORY_SINCE_COMMIT = typer.Option(
+    None,
+    "--since-commit",
+    help="The commit the statement has held since. A prefix is enough.",
+)
+MEMORY_SINCE_DATE = typer.Option(
+    None, "--since-date", help="The date the statement has held since, YYYY-MM-DD."
+)
+
+
+@memory_app.command()
+def create(
+    statement: str = typer.Argument(
+        ...,
+        help="What a person knows, in their own words. '-' reads it from stdin.",
+    ),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    about_repository: bool = MEMORY_ABOUT_REPOSITORY,
+    about_path: str | None = MEMORY_ABOUT_PATH,
+    about_definition: str | None = MEMORY_ABOUT_DEFINITION,
+    about_commit: str | None = MEMORY_ABOUT_COMMIT,
+    cite_commit: list[str] | None = MEMORY_CITE_COMMIT,
+    cite_file: list[str] | None = MEMORY_CITE_FILE,
+    cite_definition: list[str] | None = MEMORY_CITE_DEFINITION,
+    cite_range: list[str] | None = MEMORY_CITE_RANGE,
+    cite_cochange: list[str] | None = MEMORY_CITE_COCHANGE,
+    cite_absence: list[str] | None = MEMORY_CITE_ABSENCE,
+    since_commit: str | None = MEMORY_SINCE_COMMIT,
+    since_date: str | None = MEMORY_SINCE_DATE,
+) -> None:
+    """Record something a person knows about this project.
+
+    What is written is a memory: a statement kept beside the evidence and never
+    treated as evidence itself. Every citation is held against the stored
+    history before anything is written, so a memory cannot be made to point at
+    something that is not there — and a memory with no citations is a memory
+    that says so.
+    """
+    statement = _memory_statement(statement)
+
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            evidence = Evidence(connection, repository_root, database)
+            subject = resolve_subject(
+                evidence,
+                _memory_subject(
+                    about_repository, about_path, about_definition, about_commit
+                ),
+            )
+            citations = resolve_citations(
+                evidence,
+                _memory_citations(
+                    cite_commit,
+                    cite_file,
+                    cite_definition,
+                    cite_range,
+                    cite_cochange,
+                    cite_absence,
+                ),
+            )
+            start, day = _memory_since(evidence, since_commit, since_date)
+            author_name, author_email = read_identity(repository_root)
+            written = admit(
+                connection,
+                repository_path=repository_root,
+                statement=statement,
+                subject=subject,
+                author_name=author_name,
+                author_email=author_email,
+                since_commit_sha=start,
+                since_date=day,
+                citations=citations,
+            )
+    except (
+        GitError,
+        AnalysisError,
+        MemoryStoreError,
+        MemoryNotFound,
+        CommitNotFound,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Memory      {written.memory_id}")
+    typer.echo(f"Subject     {subject_line(written.subject)}")
+    typer.echo(f"Evidence    {_citation_count(len(written.citations))}")
+    typer.echo(f"Database    {database}")
+
+
+@memory_app.command("list")
+def list_memories(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    limit: int = typer.Option(
+        20, "--limit", "-n", min=1, help="How many memories to show."
+    ),
+    show_all: bool = typer.Option(False, "--all", help="Show every memory."),
+    include_ended: bool = typer.Option(
+        False,
+        "--include-ended",
+        help="Also show the memories that have been superseded or invalidated.",
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Show the memories kept for this project, newest first."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        head_sha = _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            evidence = Evidence(connection, repository_root, database)
+            foreign = foreign_memories(connection, repository_root)
+            # **Only the rows that will be printed are read at all.** A list
+            # re-checks the cheap citations and the subject of every memory it
+            # shows — a diff and a walk of the history are what `memory show`
+            # pays for, and a list that stayed silent about them would read as
+            # though everything had been verified — but that is one query per
+            # memory, and a block prints twenty of a store that may hold a
+            # hundred thousand. So the read stops at the slice and the count
+            # says what is behind it. `--json` carries all of them, so it reads
+            # all of them.
+            every = as_json or show_all
+            memories = read_memories(
+                connection,
+                repository_root,
+                include_ended=include_ended,
+                limit=None if every else limit,
+            )
+            total = (
+                len(memories)
+                if every
+                else count_memories(
+                    connection, repository_root, include_ended=include_ended
+                )
+            )
+            entries = [_shown(evidence, memory, deep=False) for memory in memories]
+    except (GitError, AnalysisError, MemoryStoreError, MemoryNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    count, paths = foreign
+    if count:
+        # On stderr, so the block and the JSON stay what they are: a note about
+        # the database is not part of the memories it holds. The count is in
+        # brackets rather than in the noun, so the sentence is the same sentence
+        # whether one memory is hidden or a hundred.
+        typer.echo(
+            f"Note: this database also holds memories made about"
+            f" {', '.join(paths)} ({_memory_count(count)}), and they are not"
+            f" shown here",
+            err=True,
+        )
+
+    if as_json:
+        typer.echo(
+            build_list_json(
+                entries, repository=repository_root, head_sha=head_sha, foreign=foreign
+            )
+        )
+        return
+
+    typer.echo(build_list(entries, hidden=total - len(entries)))
+
+
+@memory_app.command()
+def show(
+    memory: str = typer.Argument(
+        ..., help="Memory to show. A prefix of its id is enough."
+    ),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Show one memory in full, its evidence and its lifecycle included."""
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            evidence = Evidence(connection, repository_root, database)
+            found = find_memory(connection, memory)
+            shown = _shown(evidence, found, deep=True)
+            successor = _successor(connection, found)
+    except (GitError, AnalysisError, MemoryStoreError, MemoryNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(build_show_json(shown) if as_json else build_show(shown, successor))
+
+
+@memory_app.command()
+def supersede(
+    memory: str = typer.Argument(
+        ..., help="Memory to replace. A prefix of its id is enough."
+    ),
+    statement: str = typer.Argument(
+        ..., help="What replaces it. '-' reads it from stdin."
+    ),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    about_repository: bool = MEMORY_ABOUT_REPOSITORY,
+    about_path: str | None = MEMORY_ABOUT_PATH,
+    about_definition: str | None = MEMORY_ABOUT_DEFINITION,
+    about_commit: str | None = MEMORY_ABOUT_COMMIT,
+    cite_commit: list[str] | None = MEMORY_CITE_COMMIT,
+    cite_file: list[str] | None = MEMORY_CITE_FILE,
+    cite_definition: list[str] | None = MEMORY_CITE_DEFINITION,
+    cite_range: list[str] | None = MEMORY_CITE_RANGE,
+    cite_cochange: list[str] | None = MEMORY_CITE_COCHANGE,
+    cite_absence: list[str] | None = MEMORY_CITE_ABSENCE,
+    since_commit: str | None = MEMORY_SINCE_COMMIT,
+    since_date: str | None = MEMORY_SINCE_DATE,
+) -> None:
+    """Replace a memory with a new statement, keeping the one it replaced.
+
+    One act, two rows: the successor is admitted — the same subject rules, the
+    same citation rules — and the memory it replaces is closed with the time and
+    a link to what replaced it. **Nothing is deleted and nothing is edited.** The
+    old statement stays exactly as it was written, because the end of a rule's
+    life is what a reader of an old commit wants to find.
+    """
+    statement = _memory_statement(statement)
+
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            evidence = Evidence(connection, repository_root, database)
+            # Found before anything is written, so an id that names nothing or
+            # several refuses the act rather than half of it.
+            replaced = find_memory(connection, memory)
+            subject = resolve_subject(
+                evidence,
+                _memory_subject(
+                    about_repository, about_path, about_definition, about_commit
+                ),
+            )
+            citations = resolve_citations(
+                evidence,
+                _memory_citations(
+                    cite_commit,
+                    cite_file,
+                    cite_definition,
+                    cite_range,
+                    cite_cochange,
+                    cite_absence,
+                ),
+            )
+            start, day = _memory_since(evidence, since_commit, since_date)
+            author_name, author_email = read_identity(repository_root)
+            successor = supersede_memory(
+                connection,
+                replaced.memory_id,
+                repository_path=repository_root,
+                statement=statement,
+                subject=subject,
+                author_name=author_name,
+                author_email=author_email,
+                since_commit_sha=start,
+                since_date=day,
+                citations=citations,
+            )
+    except (
+        GitError,
+        AnalysisError,
+        MemoryStoreError,
+        MemoryNotFound,
+        CommitNotFound,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Memory      {successor.memory_id}")
+    typer.echo(f"Supersedes  {replaced.memory_id}")
+    typer.echo(f"Subject     {subject_line(successor.subject)}")
+    typer.echo(f"Database    {database}")
+
+
+@memory_app.command()
+def invalidate(
+    memory: str = typer.Argument(
+        ..., help="Memory to end. A prefix of its id is enough."
+    ),
+    reason: str = typer.Option(
+        ..., "--reason", help="Why it ended. Required, and kept with the memory."
+    ),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+) -> None:
+    """End a memory, with the reason it ended.
+
+    Not a delete: the row keeps its statement, its citations and the reason, and
+    it is what ``memory list --include-ended`` and ``memory show`` print. A rule
+    that comes back is a *new* memory, so the record reads "in force, then not,
+    then in force again" rather than losing the middle of it.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            ended = invalidate_memory(
+                connection,
+                memory,
+                repository_path=repository_root,
+                reason=reason,
+            )
+    except (
+        GitError,
+        AnalysisError,
+        MemoryStoreError,
+        MemoryNotFound,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Memory      {ended.memory_id}")
+    typer.echo(f"State       {ended.state}")
+    typer.echo(f"Reason      {ended.end_reason}")
+    typer.echo(f"Database    {database}")
+
+
+@memory_app.command()
+def adopt(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    from_path: str = typer.Option(
+        ...,
+        "--from",
+        help="The path the memories were made about, in full. Typing it is the"
+        " confirmation.",
+    ),
+) -> None:
+    """Take over the memories made about another path, as this repository's.
+
+    The act for a repository that moved, and the only way out of a database
+    whose rows name a path this checkout no longer has. Nothing about a memory
+    changes but its repository: the statements, the authors, the times, the
+    citations and the states are all kept exactly as they were written.
+
+    **The path is given in full and there is no prompt.** Typing it is the
+    confirmation, which is why a typo cannot match and why the tool stays
+    scriptable — the same reason nothing else here asks a question.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        with open_analysis(repository_root, database) as connection:
+            moved = adopt_memory(
+                connection, from_path=from_path, to_path=repository_root
+            )
+    except (
+        GitError,
+        AnalysisError,
+        MemoryStoreError,
+        MemoryNotFound,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Adopted     {_memory_count(moved)}")
+    typer.echo(f"From        {Path(from_path).resolve()}")
+    typer.echo(f"To          {repository_root}")
+    typer.echo(f"Database    {database}")
+
+
+def _foreign_memory_note(repository_root, database) -> str | None:
+    """What to say when a database already holds memories about another path.
+
+    The one moment the tool itself can leave knowledge behind: `analyze` pointed
+    at a file another repository's memories live in. Nothing is lost — the rows
+    stay, and the memory commands report them — but this is the moment a person
+    should hear it, rather than discovering it later in `memory list`. It is
+    also the middle step of the recipe a moved repository follows, so the note
+    names the act that finishes it.
+
+    Read from the command line rather than from ``analysis.py``: the evidence
+    layer must not know that memory exists, and this is a note for the person.
+    """
+    try:
+        with open_analysis(repository_root, database) as connection:
+            count, paths = foreign_memories(connection, repository_root)
+    except (AnalysisError, MemoryStoreError):
+        # An unreadable memory store is not this command's business: the memory
+        # commands say so themselves, and the analysis has already happened.
+        return None
+
+    if not count:
+        return None
+    return (
+        f"Note: this database also holds memories made about"
+        f" {', '.join(paths)} ({_memory_count(count)}); they are kept, and"
+        f" 'archaeology memory list' reports what is not shown. If the repository"
+        f" moved, run 'archaeology memory adopt --from {paths[0]}' to make them"
+        f" this one's"
     )
+
+
+def _memory_count(count: int) -> str:
+    return f"{count} memory" if count == 1 else f"{count} memories"
+
+
+def _memory_statement(typed: str) -> str:
+    """The statement as typed, or the whole of stdin when it is ``-``."""
+    if typed == "-":
+        return sys.stdin.read().rstrip("\n")
+    return typed
+
+
+def _memory_subject(
+    about_repository: bool,
+    about_path: str | None,
+    about_definition: str | None,
+    about_commit: str | None,
+) -> Subject:
+    """The subject the flags name, refused unless exactly one form is given.
+
+    The four forms are the schema's four subject kinds, and the flags are their
+    own words: a reader who typed two of them meant one, and a memory that
+    guessed which would be a memory filed under the wrong thing.
+    """
+    if about_definition and not about_path:
+        raise MemoryStoreError(
+            "a definition is a path and a qualified name; give --about-path too"
+        )
+    if sum([bool(about_repository), bool(about_path), bool(about_commit)]) != 1:
+        raise MemoryStoreError(
+            "a memory is about one thing: give exactly one of --about-repository,"
+            " --about-path (with --about-definition for a definition in it), or"
+            " --about-commit"
+        )
+
+    if about_repository:
+        return Subject("repository")
+    if about_path:
+        if about_definition:
+            return Subject("definition", path=about_path, qualname=about_definition)
+        return Subject("path", path=about_path)
+    return Subject("commit", commit_sha=about_commit)
+
+
+def _memory_since(
+    evidence: Evidence, commit_sha: str | None, day: str | None
+) -> tuple[str | None, str | None]:
+    """The two time flags: the commit resolved, the date passed through.
+
+    A start is the author's claim about the project and it is optional — absent
+    means unknown, never "from the beginning" (Unit 2 §6). The commit is
+    resolved the way a commit subject is, so what is stored is an address the
+    store held and a prefix that names nothing is refused before the act; the
+    date's shape, and the rule that a memory has one start and not two, are the
+    store's, where the schema's own constraints live.
+    """
+    if not commit_sha:
+        return None, day
+    return resolve_since_commit(evidence, commit_sha), day
+
+
+def _memory_citations(
+    cite_commit, cite_file, cite_definition, cite_range, cite_cochange, cite_absence
+) -> tuple[Citation, ...]:
+    """The citations the flags name. The order is settled when they are stored."""
+    found = []
+    for kind, values in (
+        ("commit", cite_commit),
+        ("file", cite_file),
+        ("definition", cite_definition),
+        ("range", cite_range),
+        ("cochange", cite_cochange),
+        ("absence", cite_absence),
+    ):
+        for value in values or ():
+            found.append(Citation(kind=kind, ref=value))
+    return tuple(found)
+
+
+def _shown(evidence: Evidence, memory, *, deep: bool) -> Shown:
+    """A memory re-checked: its subject, its citations, and its since-commit.
+
+    ``deep`` is the citations' business alone. A range costs a diff and a
+    co-change pair costs a walk of the history, so a list leaves those two to
+    ``memory show``; the subject is a single indexed query either way, so both
+    views check it and neither can print it as though it were still there.
+    """
+    return shown(evidence, memory, deep=deep)
+
+
+def _memory_section(repository_root, database, context):
+    """The memories related to this commit, or ``None`` when there are none.
+
+    **An unreadable memory store does not stop the evidence being read.** The
+    refusal is printed as a note and the command carries on without a section:
+    the store's version stamp being from a newer tool is a reason not to read
+    memories, and never a reason to refuse an explanation of a commit. Silence
+    would be worse than the note — a reader would not know a section was meant
+    to be there.
+    """
+    try:
+        with open_analysis(repository_root, database) as connection:
+            return build_section(
+                Evidence(connection, repository_root, database), context, repository_root
+            )
+    except MemoryStoreError as error:
+        typer.echo(f"Note: {error}", err=True)
+        return None
+
+
+def _successor(connection, memory):
+    """The memory that replaced this one, when there is one to read."""
+    if memory.superseded_by is None:
+        return None
+    try:
+        return find_memory(connection, memory.superseded_by)
+    except MemoryNotFound:
+        return None
+
+
+def _citation_count(count: int) -> str:
+    if not count:
+        return "none attached"
+    return f"{count} citation" if count == 1 else f"{count} citations"
+
+
+app.add_typer(memory_app, name="memory")

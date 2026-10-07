@@ -1,9 +1,17 @@
 """Store commit history in SQLite.
 
-The database is a cache over a repository, not the system of record: every row
-here can be rebuilt by reading git again. That is why the schema only holds
-facts git reported, and nothing that only a later version of the tool could
-compute.
+The evidence tables are a cache over a repository, not the system of record:
+every row in them can be rebuilt by reading git again. That is why the schema
+only holds facts git reported, and nothing that only a later version of the tool
+could compute.
+
+**v0.5 added the one exception, and it is not in this module.** A database can
+also hold memories — statements a person made about the project — and those
+cannot be rebuilt from anything. They live in their own tables, which are
+deliberately **not** in :data:`TABLES`: that tuple is what a schema rebuild
+drops, so a memory survives a rebuild because it was never on the list. The
+module that owns them is ``memory.py``; nothing here reads them, and no evidence
+query ever may.
 
 Schema version 4 is six tables:
 
@@ -131,6 +139,9 @@ CREATE INDEX IF NOT EXISTS definition_versions_qualname
     ON definition_versions (path, qualname);
 """
 
+# What a schema rebuild throws away. The memory tables are deliberately not in
+# this list — that is the whole of what keeps a memory across a rebuild, because
+# a memory cannot be rebuilt from git the way everything here can.
 TABLES = (
     "definition_versions",
     "file_versions",
@@ -139,6 +150,12 @@ TABLES = (
     "commits",
     "meta",
 )
+
+# The ``meta`` keys this module writes. A rebuild recreates them; every other
+# key in ``meta`` belongs to somebody else and is carried across it — which is
+# what keeps the memory version stamp alive when the evidence around it is
+# rebuilt.
+EVIDENCE_META_KEYS = ("schema_version", "repository_root", "head_sha")
 
 # What a definition row says happened to it in this version of this file. A
 # definition that is gone has no row at all, so there is no ``deleted`` here: the
@@ -221,7 +238,14 @@ def read_schema_version(connection: sqlite3.Connection) -> str | None:
 
 
 def drop_tables(connection: sqlite3.Connection) -> None:
-    """Remove every table, leaving an empty database file."""
+    """Remove the evidence tables, leaving everything else alone.
+
+    "Every table" used to be the whole of this, and it is no longer true: the
+    memory tables are not in :data:`TABLES`, so a rebuild drops the cache and
+    keeps the knowledge. The rule is enforced by the list rather than by a
+    condition here, because a list can be read and checked and a condition is
+    one edit away from dropping something that cannot be rebuilt.
+    """
     with connection:
         for table in TABLES:
             connection.execute(f"DROP TABLE IF EXISTS {table}")
@@ -239,8 +263,39 @@ def prepare_database(connection: sqlite3.Connection) -> None:
     # conclude that all is well.
     stored = read_schema_version(connection)
     if stored is not None and stored != SCHEMA_VERSION:
+        kept = _foreign_meta(connection)
         drop_tables(connection)
+        create_schema(connection)
+        _restore_meta(connection, kept)
     create_schema(connection)
+
+
+def _foreign_meta(connection: sqlite3.Connection) -> list[tuple[str, str]]:
+    """Every ``meta`` row this module does not own, so a rebuild can keep it.
+
+    A schema rebuild recreates ``meta``, and a key this module does not know
+    about belongs to another part of the tool — v0.5's memory version stamp is
+    the one that exists today. Carrying it across is what keeps a memory
+    readable after the evidence around it is rebuilt; the alternative, naming
+    that key here, would make this module a second place that knows memory's
+    shape.
+    """
+    placeholders = ", ".join("?" * len(EVIDENCE_META_KEYS))
+    return [
+        (row["key"], row["value"])
+        for row in connection.execute(
+            f"SELECT key, value FROM meta WHERE key NOT IN ({placeholders})",
+            EVIDENCE_META_KEYS,
+        )
+    ]
+
+
+def _restore_meta(connection: sqlite3.Connection, rows) -> None:
+    """Write the rows :func:`_foreign_meta` kept, after the tables are rebuilt."""
+    with connection:
+        connection.executemany(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", list(rows)
+        )
 
 
 def set_meta(connection: sqlite3.Connection, key: str, value: str) -> None:
@@ -258,12 +313,17 @@ def get_meta(connection: sqlite3.Connection, key: str) -> str | None:
 def clear_history(connection: sqlite3.Connection) -> None:
     """Remove every stored commit and everything built on it.
 
-    This is the whole-database wipe, and it is **not** what a rescan does. A
+    This is the whole-**evidence** wipe, and it is **not** what a rescan does. A
     rescan writes the history git has now and removes only the commits git no
     longer has, which leaves the AST rows of the commits that stayed exactly
     where they were — see :func:`write_commits`. This function is kept for the
-    case where everything is meant to go; the schema rebuild uses
-    :func:`drop_tables` instead, because it has to remove the tables themselves.
+    case where everything the tool derived is meant to go; the schema rebuild
+    uses :func:`drop_tables` instead, because it has to remove the tables
+    themselves.
+
+    Memories are not evidence and are not touched: they are somebody's
+    statements, not a cache, and no function here may delete them. A caller that
+    really means "everything" is asking for something this module does not have.
     """
     with connection:
         connection.execute("DELETE FROM definition_versions")

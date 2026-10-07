@@ -4,14 +4,24 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.4.0 is released.** Ten commands work today: the three v0.1 brought,
-> plus `hotspots`, `files` and `file` from v0.2, `ast`, `structure` and `cochange`
-> from v0.3, and `explain` from v0.4 — the only one that talks to a model. The
-> evidence layer of v0.3.x is frozen, and what it is and is not is written down in
+> **Status: v0.5.0 is feature-complete — the tree says 0.5.0 and the release is
+> the next step.** Sixteen commands work today: the ten of v0.4 — through
+> `explain`, the only one that talks to a model — plus the six memory acts
+> (`memory create`, `list`, `show`, `supersede`, `invalidate` and `adopt`), which
+> keep what people know about the project beside the evidence and never treat it
+> as evidence. **The evidence rows can be rebuilt from git; the memory rows
+> cannot** — that exception is the one thing v0.5 changes about the database, and
+> it is stated in *Where the database lives* below. The evidence layer of v0.3.x
+> is frozen, and what it is and is not is written down in
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md); what v0.4 adds and what
-> holds it in place is [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md).
-> **What that answer is, and what it is not** — an interpretation of the evidence,
-> never a record of what happened — is fixed in
+> holds it in place is [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md);
+> what v0.5 is, and what holds it, is
+> [`docs/v0.5-final-state.md`](docs/v0.5-final-state.md), with the memory layer's
+> definition in [`docs/v0.5-design.md`](docs/v0.5-design.md), its data model in
+> [`docs/v0.5-storage-design.md`](docs/v0.5-storage-design.md) and its command
+> line in [`docs/v0.5-cli-design.md`](docs/v0.5-cli-design.md). **What a model's
+> answer is, and what it is not** — an interpretation of the evidence, never a
+> record of what happened — is fixed in
 > [`docs/v0.4-problem-definition.md`](docs/v0.4-problem-definition.md) §12. The
 > project is not on PyPI yet, so there is no `pip install` for it.
 
@@ -46,7 +56,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.4.0
+archaeology 0.5.0
 ```
 
 ## Usage
@@ -56,11 +66,12 @@ directory. None of them ever writes to the repository: the analysis goes into a
 database in your cache directory.
 
 The reading commands — `timeline`, `hotspots`, `files`, `file`, `structure`,
-`cochange` and `explain` — take `--json`, which prints the same facts in the same
-names for other programs to read. Only the JSON goes to stdout — the note about a
-stale analysis goes to stderr — so the output stays parseable whether or not the
-snapshot is current. `commit` has no JSON form yet, and the two writers,
-`analyze` and `ast`, print a summary of what they did instead.
+`cochange`, `explain`, `memory list` and `memory show` — take `--json`, which
+prints the same facts in the same names for other programs to read. Only the JSON
+goes to stdout — the note about a stale analysis goes to stderr — so the output
+stays parseable whether or not the snapshot is current. `commit` has no JSON form
+yet, and the writers — `analyze`, `ast` and the memory acts — print a summary of
+what they did instead.
 
 ### Analyze a repository
 
@@ -78,8 +89,9 @@ Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 Running it again refreshes what was stored, so it is safe to repeat after new
 commits, a rebase or an amend: a commit git no longer has takes its rows with it,
 and everything still true stays. A database written by an older version of the
-tool is the one case that is rebuilt from scratch — the structure layer included
-— so run `ast` again afterwards.
+tool is the one case where the evidence is rebuilt from scratch — the structure
+layer included, so run `ast` again afterwards — and the memories are kept across
+it, because they are the one thing in the file git cannot give back.
 
 If the repository is a shallow clone, `analyze` says so on stderr. The oldest
 commit such a clone has is treated as the root, so every file in it looks like it
@@ -798,6 +810,11 @@ usually changes alongside those files, the earlier commits that touched them, an
 a list of what could not be read. `bounds` says what was capped, so a context that
 left rows out never reads like a complete one.
 
+**The memories kept about this commit are shown beside the evidence**, under their
+own heading and never inside the bundle — see
+[What `explain` does with them](#what-explain-does-with-them). With none to show,
+the output is exactly what it was before there was a memory layer at all.
+
 **A commit too large to send whole is reduced for the model, and only for the
 model.** The bundle is deliberately not capped — a file list that stopped early
 would hide the answer to the question being asked, and a reader can scroll — so a
@@ -933,6 +950,374 @@ is always an object holding a list. The evidence travels beside the answer so th
 one can be checked against the other without a second call, and the `confidence`
 in the JSON is the count the tool made, not a number the model chose.
 
+### Keep what people know
+
+`memory` is the one part of this tool that is not derived from the repository. It
+holds statements a person made about the project — why a rule exists, what a
+constraint is for, what was tried and abandoned — kept beside the evidence and
+**never treated as evidence itself**. None of it needs a model: a memory is
+written, listed and read back with nothing configured, and that is the point.
+It is also the one row in the database git cannot give back — the evidence
+tables are a cache and these are not, which *Where the database lives* below
+spells out.
+
+```console
+$ archaeology memory create "We keep the login helper in one module: the split state machine caused an incident." --about-path core/app.py --cite-commit 78c0647a --cite-file core/app.py --since-commit 392cc0db ~/projects/sample-project
+Memory      3f2a9c1e-8b47-4d6a-9f10-2c5e7a0b41d9
+Subject     core/app.py
+Evidence    2 citations
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+A memory is about exactly one thing, and the four kinds are four flags: the
+project (`--about-repository`), a file (`--about-path`), a definition inside one
+(`--about-path` with `--about-definition`), or a commit (`--about-commit`). The
+subject has to resolve against the stored history — a path the history never
+touched is refused with the sentence `files` already uses — because a memory
+nothing can be found by is a memory nobody will read.
+
+What a memory was made from is optional, and given the same way, one flag per
+kind of evidence: `--cite-commit`, `--cite-file`, `--cite-definition`,
+`--cite-range` (with a `--cite-commit` beside it, because a range is a span of one
+commit's diff), `--cite-cochange` and `--cite-absence`. **Every citation is held
+against the stored history before anything is written**, so a memory cannot be
+made to point at something that is not there. A memory with no citations is a
+memory that says so, in as many words.
+
+**When the statement started holding is the author's to say, and it is
+optional**: `--since-commit` (a sha, or a prefix of one, resolved against the
+stored history before the act) or `--since-date` (`YYYY-MM-DD`), and never both —
+a memory has one start. Absent means unknown, never "from the beginning", and it
+is what `explain` computes *in force at this commit* from. A claim about the
+project is recorded and never inferred: a rule nobody dated stays undated until
+somebody says.
+
+### List the memories
+
+```console
+$ archaeology memory list ~/projects/sample-project
+Memories (2)
+
+1. core/app.py
+   We keep the login helper in one module: the split state machine caused an incident.
+   b7d4e2f1  active  admitted 2024-06-01 09:00:00 +0000  since 392cc0db21a7
+   evidence: commit 78c0647a, file core/app.py
+
+2. the project
+   We do not add runtime dependencies casually.
+   5e8a1c47  active  admitted 2024-06-01 08:00:00 +0000
+   evidence: none attached
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+`--limit` and `--all` work as they do everywhere else, and the list is newest
+first. The short id is what `show` takes; a statement too long for a list is cut
+with the cut stated, naming the command that prints the rest.
+
+### Show one memory
+
+```console
+$ archaeology memory show b7d4e2f1 ~/projects/sample-project
+Memory      b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34
+Repository  /home/you/projects/sample-project
+Subject     core/app.py
+Author      Ada Lovelace <ada@example.com>
+Admitted    2024-06-01 09:00:00 +0000
+State       active
+Since       392cc0db21a7 (2024-03-01)
+
+We keep the login helper in one module: the split state machine caused an incident.
+
+Evidence (2)
+  commit      78c0647a  resolved
+  file        core/app.py  resolved
+
+Lifecycle   nothing supersedes it
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+`Since` is when the statement started holding, and it is `unknown` when nobody
+said — never the time the memory was written, which is a fact about the database
+and not about the project. `Author` is the identity the repository's git
+configuration gives, and `unknown` when it gives none.
+
+Every citation is read back and its state printed in words: `resolved`, `no
+longer in this history` — a rewrite that removed a commit does not make the
+memory wrong, and the tool never edits what a person wrote — or `not checked`,
+which is what a list says about a range or a co-change pair, because those cost a
+diff or a walk of the history and `show` is where they are paid for. **The
+subject is checked the same way, and in both views**: a memory about a file a
+rewrite removed says `(no longer in this history)` beside it rather than printing
+it as though it were still there.
+
+```console
+$ archaeology memory list --json ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "memories": [
+    {
+      "memory_id": "b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34",
+      "repository": "/home/you/projects/sample-project",
+      "statement": "We keep the login helper in one module: the split state machine caused an incident.",
+      "author": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.com"
+      },
+      "admitted_at": "2024-06-01T09:00:00+00:00",
+      "state": "active",
+      "subject": {
+        "kind": "path",
+        "path": "core/app.py",
+        "resolution": "resolved"
+      },
+      "since": {
+        "commit": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+        "commit_date": "2024-03-01"
+      },
+      "ended_at": null,
+      "end_reason": null,
+      "superseded_by": null,
+      "supersedes": null,
+      "citations": [
+        {
+          "kind": "commit",
+          "ref": "78c0647a",
+          "resolution": "resolved"
+        },
+        {
+          "kind": "file",
+          "ref": "core/app.py",
+          "resolution": "resolved"
+        }
+      ]
+    },
+...
+  ]
+}
+```
+
+`--json` carries every memory of the repository whatever `--limit` said, because
+a program that asked for the list asked for all of it — the rule `files --json`
+already follows.
+
+### Replace a memory
+
+A memory that is wrong, or that has stopped being true, is not edited and not
+deleted: a new statement replaces it, and the one it replaced keeps its place.
+
+```console
+$ archaeology memory supersede b7d4e2f1 "The login helper stays in one module, and it checks the session itself." --about-path core/app.py --cite-file core/app.py ~/projects/sample-project
+Memory      3f2a9c1e-8b47-4d6a-9f10-2c5e7a0b41d9
+Supersedes  b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34
+Subject     core/app.py
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+One act writes two rows: the successor is admitted with the same subject and
+citation rules as `create`, and the memory it replaced is closed with the moment
+and a link to what replaced it. **Nothing is overwritten** — `show` on the old id
+still prints the statement that was written then, with `superseded by` naming its
+successor — and a memory that has already ended takes no further act: the refusal
+says to record a new one instead. A chain of them is a chain of rows, and it can
+only ever point forward, because a successor is always a memory the act has just
+written.
+
+### End a memory
+
+`invalidate` is the other way a memory ends: no successor, and a reason that is
+required.
+
+```console
+$ archaeology memory invalidate 5e8a1c47 --reason "we allow one dependency now" ~/projects/sample-project
+Memory      5e8a1c47-3f92-4b6d-a1e8-7c2f4d9a6b53
+State       invalidated
+Reason      we allow one dependency now
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+"It was wrong" and "it stopped applying" are different sentences, which is why
+the reason is kept with the memory rather than left to the reader. A rule that
+comes back is a **new** memory — the record then reads "in force, then not, then
+in force again" — because un-ending a row would lose the middle of it.
+
+Both ended states are hidden from `memory list` by default, because the default
+question is what the project knows *now*:
+
+```console
+$ archaeology memory list --include-ended ~/projects/sample-project
+Memories (3)
+
+1. core/app.py
+   We keep the login helper in one module: the split state machine caused an incident.
+   b7d4e2f1  active  admitted 2024-06-01 09:00:00 +0000  since 392cc0db21a7
+   evidence: commit 78c0647a, file core/app.py
+
+2. the project
+   We do not add runtime dependencies casually.
+   5e8a1c47  active  admitted 2024-06-01 08:00:00 +0000
+   evidence: none attached
+
+3. core/app.py
+   The health check belonged in core/app.py.
+   a1f3d8c2  invalidated 2024-06-01 07:30:00 +0000: it moved into its own module
+   evidence: none attached
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+### When the repository moves
+
+A database is named after a digest of the repository's absolute path, so a
+checkout at a new path gets a new, empty database and the memories *appear* to
+vanish. They have not: the old file is still in the cache directory with every
+row in it. The tool cannot find it by itself — nothing tells it the two paths are
+the same project, and guessing from a remote URL or a commit sha is the kind of
+inference this project refuses — so the way back is explicit, and it is three
+steps:
+
+```bash
+# 1. point the old file at the new path (this rewrites the evidence, not the memories)
+archaeology analyze ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+
+# 2. the memories are kept and reported, and the write is refused until they are adopted
+archaeology memory list ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+
+# 3. say that the old path is this project, at a new path
+archaeology memory adopt --from ~/old/sample-project ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+```
+
+`adopt` is the sixth act, and it changes exactly one thing about a memory: the
+repository it belongs to. Statements, authors, times, citations and states are
+kept as written, and the act is recorded in the database so a store does not look
+as though those rows were always this checkout's.
+
+```console
+$ archaeology memory adopt --from ~/old/sample-project ~/projects/sample-project
+Adopted     2 memories
+From        /home/you/old/sample-project
+To          /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+**The path is given in full, and there is no prompt.** Typing it is the
+confirmation — which is why a typo cannot match and why the tool stays
+scriptable. It refuses a path nothing was made about, the path it is already, and
+a destination that holds memories of its own: merging two projects' knowledge is
+a question this version answers by refusing rather than by guessing.
+
+`analyze` says when it is about to leave memories behind — the moment a shared
+`--db` or a move puts them out of view — naming the count, the path, and the act
+that finishes the job. Nothing is ever destroyed by the tool: only deleting the
+file does that.
+
+### What `explain` does with them
+
+`explain` reads one commit, and the memories related to it are shown beside the
+evidence — in the same output, under their own heading, and **never inside the
+evidence bundle**. A memory is related when it is about the commit, about a
+definition this commit changed, about a file it touched under any name that file
+ever had, about the project, or when it cites this commit. The most specific
+subject comes first, then the most recent admission, and anything the cap leaves
+out is counted.
+
+They are split in two, and the split is the point: **in force at this commit** is
+what provably held when the code was written, and **related, not provably in
+force** is everything else — a memory whose start nobody recorded, or one whose
+span lies outside this commit. Hiding the second group would hide knowledge;
+merging it into the first would let a rule from 2026 read as the reason for a
+commit from 2023.
+
+```console
+$ archaeology explain 78c0647a --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+...
+  "memory": {
+    "in_force": [
+      {
+        "memory_id": "b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34",
+        "repository": "/home/you/projects/sample-project",
+        "statement": "We keep the login helper in one module: the split state machine caused an incident.",
+        "author": {
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        },
+        "admitted_at": "2024-06-01T09:00:00+00:00",
+        "state": "active",
+        "subject": {
+          "kind": "path",
+          "path": "core/app.py",
+          "resolution": "resolved"
+        },
+        "since": {
+          "commit": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+          "commit_date": "2024-03-01"
+        },
+        "ended_at": null,
+        "end_reason": null,
+        "superseded_by": null,
+        "supersedes": null,
+        "citations": [
+          {
+            "kind": "commit",
+            "ref": "78c0647a",
+            "resolution": "resolved"
+          },
+          {
+            "kind": "file",
+            "ref": "core/app.py",
+            "resolution": "resolved"
+          }
+        ]
+      }
+    ],
+    "not_provably_in_force": [
+      {
+        "memory_id": "5e8a1c47-3f92-4b6d-a1e8-7c2f4d9a6b53",
+        "repository": "/home/you/projects/sample-project",
+        "statement": "We do not add runtime dependencies casually.",
+        "author": {
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        },
+        "admitted_at": "2024-06-01T08:00:00+00:00",
+        "state": "active",
+        "subject": {
+          "kind": "repository",
+          "resolution": "resolved"
+        },
+        "since": null,
+        "ended_at": null,
+        "end_reason": null,
+        "superseded_by": null,
+        "supersedes": null,
+        "citations": []
+      }
+    ]
+  }
+}
+```
+
+`memory` is a sibling of `evidence`, never a key inside it, and it is **absent
+when there is nothing to show** — a commit whose files carry no stored memory
+prints exactly what v0.4 printed. Each memory in it is the same object `memory
+show --json` prints, so a program that reads one reads the same shape everywhere.
+
+**The model is shown the same section, under a heading that says what it is**,
+and the instructions tell it what it may do with one: a memory may inform a
+candidate reason, it may never be cited as evidence or written as something
+observed. An answer may point at a memory by id, and the id is checked against
+the section the model was actually shown. The statement is then printed from the
+store — the tool's own bytes, never the model's paraphrase — with the model's
+sentence under it, marked as the reading it is.
+
 ### Re-running `analyze` does not throw the structure away
 
 `analyze` and `ast` write different tables, and `analyze` removes only what git no
@@ -966,7 +1351,9 @@ The second `ast` parsed the one new version and reused the six that were already
 read — the six `analyze` left alone. Had `analyze` thrown the structure away, that
 line would read `7 parsed, 0 reused`. A schema rebuild is the one thing that does
 clear it, and that is a different database being made rather than a rescan of the
-same one.
+same one. It is also the case the cache exception exists for: a rebuild drops
+every table whose rows git can give back, and the memory tables are not on that
+list, so the memories in the file survive it.
 
 ### Where the database lives
 
@@ -981,6 +1368,18 @@ checkouts of the same project keep separate ones.
 
 Set `CODEARCHAEOLOGY_CACHE_DIR` to put them somewhere else, or pass `--db` to any
 command to name the file directly.
+
+**A database is no longer only a cache, and this is the sentence to take away
+from v0.5.** Everything the tool derives is a cache over the repository: every
+evidence row can be rebuilt by reading git again, which is why a database written
+by an older schema has its evidence thrown away and read again. **The memory rows
+cannot be rebuilt from anything** — they are what people stated — and they live
+in the same file. A schema rebuild therefore keeps them, and deleting the file
+destroys them: copy it somewhere safe before replacing it. The tool says as much
+when it cannot read a database, and that is why. A database holds one
+repository's memories: `analyze` pointed at another repository's file takes the
+evidence over and leaves the memories, and the memory commands then say whose
+they are rather than mixing them in.
 
 ## Performance
 
@@ -1025,6 +1424,49 @@ What the curve says:
   identity, because it is a query rather than a walk. It is also a different
   question: it answers for a path as written, not for the file across its
   renames.
+
+### The memory store, measured
+
+`benchmarks/memory_benchmark.py` measures the store on its own, at whatever
+sizes you ask for:
+
+```console
+$ uv run python benchmarks/memory_benchmark.py --sizes 10 100 1000 10000 100000
+```
+
+| Memories | Database | `create` | `memory list` | `memory list --json` | `memory show` | `explain`'s section |
+|---|---|---|---|---|---|---|
+| 10 | 120 KB | 14.0ms | 35.0ms | 37.3ms | 35.7ms | 0.5ms |
+| 100 | 156 KB | 13.8ms | 36.4ms | 41.1ms | 33.9ms | 1.0ms |
+| 1,000 | 484 KB | 14.5ms | 37.6ms | 76.6ms | 33.1ms | 8.2ms |
+| 10,000 | 3.7 MB | 14.1ms | 40.2ms | 453ms | 35.0ms | 82ms |
+| 100,000 | 37.2 MB | 20.4ms | 78.4ms | 4.74s | 46.6ms | 1.11s |
+
+`create` is one admission, timed over a batch of twenty; the rest are the whole
+command or the whole call, fastest of three. A memory costs about 380 bytes.
+
+- **Writing does not get dearer.** An admission is ~14ms at ten memories and
+  ~20ms at a hundred thousand — and most of that is the act's own checks, not the
+  insert.
+- **Reading one memory does not either.** `memory show` is flat, because it looks
+  one row up by id.
+- **`memory list` is flat too, and that took a measurement to get right.** It was
+  linear — 843ms at ten thousand — because it read back every memory in the store
+  to print twenty of them. It now stops the read at the slice and counts what is
+  behind it, and the child rows (citations, the reverse lifecycle links) are
+  fetched by the ids that were read rather than by re-scanning the store. Both
+  are in the *Known limitations* history rather than in the code's comments
+  alone: at a hundred thousand memories the sliced read went from 495ms to
+  0.1ms, and the whole-store read from 748ms to 340ms.
+- **`--json` is linear by contract.** A program that asked for the list asked for
+  all of it, so a hundred thousand memories cost 4.74s and a document of tens of
+  megabytes. Subject filtering is the fix and it is the first thing queued after
+  v0.5.0.
+- **`explain` pays for the whole store once.** Selecting the memories related to
+  a commit reads every memory of the repository and filters it in Python, because
+  the six relations include a file's earlier names and a definition's name, which
+  are not a query the schema can answer alone. At a hundred thousand memories
+  that is 1.11s on top of a command that already rebuilds the context.
 
 ### The structure layer, measured separately
 
@@ -1074,7 +1516,7 @@ carries the interpreter and the analyzer that produced it.
 
 ```
 src/codearchaeology/
-    cli.py          the Typer application and its ten commands
+    cli.py          the Typer application and its commands
     analysis.py     running an analysis: read the repository, write the database
     ast_pass.py     the AST pass: read every Python file version, store its structure
     cache.py        where analysis databases live
@@ -1097,6 +1539,10 @@ src/codearchaeology/
     explanation.py  the answer's shape, the instructions, and the block
     validation.py   the three passes that decide whether an answer may be shown
     provider.py     the one module in the tool allowed to reach a network
+    memory.py       the memory store: the tables, the acts, and the version stamp
+    memory_checks.py  a subject and a citation, held against the evidence
+    memory_view.py  the memory block, the object, and the sentence that ends it
+    memory_section.py  which memories belong beside a commit, and how they are shown
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -1106,6 +1552,7 @@ benchmarks/
     cochange_benchmark.py  the co-change analysis as the history grows
     index_benchmark.py     what each database index buys and what it costs
     context_benchmark.py   the explanation bundle's size, section by section
+    memory_benchmark.py    the memory store as it grows, from ten to a hundred thousand
 ```
 
 ## Principles
@@ -1141,6 +1588,21 @@ These are not aspirations. They constrain what the code is allowed to do.
    reading cannot be presented as an observation, and a citation that names
    nothing is refused whole. The full statement is
    `docs/v0.4-problem-definition.md` §12.
+8. **Memory is what a person stated, and never evidence** — The one part of the
+   store the tool did not derive: statements a person admitted by an explicit act,
+   kept with the subject they are about and whatever evidence they were made from
+   (which may be none). They are shown *beside* the evidence and never inside it,
+   the model is told what they are, an answer may relate itself to one by id and
+   may never cite one as a fact, and nothing a model writes is ever stored. The
+   five rules are `docs/v0.5-design.md` §13.2, and the boundary is
+   `tests/test_memory_boundaries.py`: every evidence command is run with the
+   memory store made unreadable, every reading command is compared byte for byte
+   against a database with no memories in it, only the command line can call a
+   writing act, and a memory's id is refused as evidence of every kind. **The
+   other direction is closed too**: a model's answer may relate itself to a memory
+   and can never create or change one — `provider.py` imports nothing from the
+   package, so "the model never writes memory" is a statement about what the
+   provider *is* rather than a rule it obeys.
 
 ## Roadmap
 
@@ -1150,7 +1612,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 | v0.2 | File lifecycle, code hotspots, and a JSON output for other programs | Done |
 | v0.3 | AST analysis, function and class evolution, and co-change | Done |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Done — `explain`, with the OpenAI-compatible provider |
-| v0.5 | Developer memory — your own technical usage over time | Planned |
+| v0.5 | Developer memory — what people know about the project, kept beside the evidence | Done — `memory create`, `list`, `show`, `supersede`, `invalidate` and `adopt`, and `explain` shows the related ones beside the evidence |
 | v0.6 | AI-assisted change analysis and replay | Planned |
 
 One stage at a time. Nothing in a later stage gets designed before the earlier
@@ -1161,6 +1623,38 @@ Each release, and what it changed, is recorded in the
 
 ## Known limitations
 
+- **A memory is a statement, not a fact.** The tool did not derive it and cannot
+  check it; what it checks is the citations, and a citation that resolves does not
+  make the sentence true. Nothing a memory says is ever used as evidence, and
+  `explain` is the only command that reads the memory tables — it shows them
+  beside the evidence, under their own heading, and never inside the bundle.
+- **A memory's start is a claim, and most memories have none.** `--since-commit`
+  and `--since-date` are how a person gives one, and they are optional by design:
+  a memory nobody dated is shown under "related, not provably in force" rather
+  than assumed to have held from the beginning.
+- **A model can restate a memory as an observation, and no check catches that.**
+  The rule is that a memory may inform a reading and may never become one; what
+  the tool enforces is the structure — the section is separate, the citations are
+  checked, and the statement is printed from the store. A sentence that
+  paraphrases a memory into an observed change, with a real citation beside it,
+  passes every pass there is. `tests/test_memory_boundaries.py` pins that as a
+  known limit rather than leaving it to be discovered.
+- **A memory has two ways to end and no way to be edited.** It is replaced by a
+  new statement (`supersede`) or ended with a reason (`invalidate`); there is no
+  delete and no in-place edit, and both states are terminal — a rule that comes
+  back is a new memory. A statement written by mistake is invalidated with the
+  reason saying so.
+- **A memory exists in exactly one place.** Everything else in the database can
+  be rebuilt by reading git again; a memory cannot, because it is what a person
+  stated. Deleting the database file destroys the memories in it, and nothing
+  else can bring them back — so copy the file before replacing it or clearing a
+  cache directory. Export and import are not here yet.
+- **A moved repository needs three steps, and the tool cannot shorten them.**
+  The database is named after the path, so a checkout at a new path looks for a
+  different file. `analyze --db <old file>`, then `memory adopt --from <old path>`
+  is the way back, and it is written out in *When the repository moves* above.
+  Finding the old file by itself would mean guessing that two paths are one
+  project, which this tool does not do.
 - **Nothing is incremental yet, in either direction.** `analyze` rescans the whole
   history and rewrites every commit, parent and file-change row — at two hundred
   thousand commits, 85% of its time is that rewrite. The AST pass walks every

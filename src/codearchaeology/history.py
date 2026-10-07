@@ -124,6 +124,31 @@ def is_shallow_clone(repo) -> bool:
     return output.decode("ascii").strip() == "true"
 
 
+def read_identity(repo) -> tuple[str | None, str | None]:
+    """Return the name and email this repository's configuration gives.
+
+    A memory records who stated it, and this is the identity the tool can see
+    without asking anybody: the git configuration the person is already working
+    under. Neither half is required — a machine with no ``user.email`` is still a
+    machine where a memory can be recorded, and the memory then says the author
+    is unknown rather than inventing one.
+    """
+    return (_configured(repo, "user.name"), _configured(repo, "user.email"))
+
+
+def _configured(repo, name: str) -> str | None:
+    """One configuration value, or ``None`` when it is not set.
+
+    ``git config --get`` exits non-zero for a key that is not there, which is
+    the ordinary case for a fresh machine rather than an error to report.
+    """
+    completed = _run_git_unchecked(repo, "--no-pager", "config", "--get", name)
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.decode("utf-8", errors="surrogateescape").strip()
+    return value or None
+
+
 def find_repository_root(path) -> Path | None:
     """Return the working tree root that contains *path*, or ``None``.
 

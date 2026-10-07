@@ -233,6 +233,21 @@ def git_output(repo, *args, timestamp=None):
     return completed.stdout
 
 
+def _configure(repo) -> None:
+    """The settings every fixture repository needs, in one place.
+
+    No CRLF rewriting and no signing, because both would change what git writes.
+    And an identity of its own: commits here run with the author in the
+    environment, so they are the same everywhere — but a memory records the
+    identity the repository's *configuration* gives, and without this a fixture
+    would inherit whatever machine built it.
+    """
+    git_output(repo, "config", "core.autocrlf", "false")
+    git_output(repo, "config", "commit.gpgsign", "false")
+    git_output(repo, "config", "user.name", AUTHOR_NAME)
+    git_output(repo, "config", "user.email", AUTHOR_EMAIL)
+
+
 def _write_file(repo, relative_path, content):
     path = Path(repo) / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -275,8 +290,7 @@ def build_sample_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "README.md", README)
     _write_file(repo, "app.py", APP_BEFORE)
@@ -319,8 +333,7 @@ def build_single_commit_repo(destination, message="Only commit"):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "only.py", "x = 1\n")
     _commit(repo, INITIAL_DATE, message)
@@ -351,8 +364,7 @@ def build_lifecycle_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "app.py", APP)
     _write_file(repo, "kept.py", KEPT)
@@ -417,8 +429,7 @@ def build_cochange_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "a.py", "a = 1\n")
     _write_file(repo, "b.py", "b = 1\n")
@@ -455,8 +466,7 @@ def build_broken_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "broken.py", BROKEN_BEFORE)
     _commit(repo, _day(1), "Add broken.py")
@@ -510,8 +520,7 @@ def build_edit_history_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "edited.py", EDITED_ONCE)
     _write_file(repo, "empty.py", EMPTY)
@@ -550,8 +559,7 @@ def build_deep_history_repo(destination, edits: int = 8):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "deep.py", _sweep_file("deep", 0))
     _commit(repo, _day(1), "Create deep.py")
@@ -614,8 +622,7 @@ def build_wide_commit_repo(destination, files=WIDE_FILES, history=WIDE_HISTORY):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, _wide_path(0), _wide_file(0, edit=1))
     _commit(repo, _day(1), WIDE_SMALL_MESSAGE)
@@ -733,8 +740,7 @@ def build_large_repo(
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     completed = subprocess.run(
         ["git", "fast-import", "--quiet"],
@@ -766,8 +772,7 @@ def build_same_second_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "app.py", APP)
     _commit(repo, SAME_SECOND, "Create app.py")
@@ -798,8 +803,7 @@ def build_rename_boundary_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     for name in SWEEP_REWRITES:
         _write_file(repo, f"{name}.py", _sweep_file(name))
@@ -895,8 +899,7 @@ def build_definition_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     versions = (
         DEFINITION_V1,
@@ -942,8 +945,7 @@ def build_gap_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     for name in ("vanished.py", "dark.py", "gone.py"):
         _write_file(repo, name, DEFINITION_V1)
@@ -982,8 +984,7 @@ def build_interleaved_repo(destination):
     repo.mkdir(parents=True, exist_ok=True)
 
     git_output(repo, "init", "--initial-branch", "main")
-    git_output(repo, "config", "core.autocrlf", "false")
-    git_output(repo, "config", "commit.gpgsign", "false")
+    _configure(repo)
 
     _write_file(repo, "app.py", DEFINITION_V1)
     _commit(repo, _day(1), "Create app.py")

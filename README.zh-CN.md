@@ -4,11 +4,18 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.4.0 已发布。** 现在有十个命令可用：v0.1 带来的三条，v0.2 的
-> `hotspots`、`files` 和 `file`，v0.3 的 `ast`、`structure` 和 `cochange`，以及 v0.4 的
-> `explain`——唯一会和模型说话的一个。v0.3.x 的证据层已冻结，它是什么、不是什么写在
+> **状态：v0.5.0 功能已完整——代码树里写的就是 0.5.0，下一步是发布。** 现在有十六个
+> 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
+> 的六个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`）——它们把
+> 人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git 重建，
+> memory 行不能**——这是 v0.5 对数据库唯一的一处改动，写在下面的"数据库放在哪"一节里。
+> v0.3.x 的证据层已冻结，它是什么、不是什么写在
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里；v0.4 加了什么、由什么守住，
-> 写在 [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md) 里。**那份答案是什么、不是什么**
+> 写在 [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md) 里；v0.5 是什么、由什么守住，
+> 写在 [`docs/v0.5-final-state.md`](docs/v0.5-final-state.md) 里，memory 这一层的定义在
+> [`docs/v0.5-design.md`](docs/v0.5-design.md)，数据模型在
+> [`docs/v0.5-storage-design.md`](docs/v0.5-storage-design.md)，命令行在
+> [`docs/v0.5-cli-design.md`](docs/v0.5-cli-design.md)。**模型的答案是什么、不是什么**
 > ——是对证据的解读，绝不是"当时发生了什么"的记录——固定在
 > [`docs/v0.4-problem-definition.md`](docs/v0.4-problem-definition.md) §12。项目还没有
 > 发布到 PyPI，所以暂时没有 `pip install` 可用。
@@ -42,7 +49,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.4.0
+archaeology 0.5.0
 ```
 
 ## 用法
@@ -51,9 +58,10 @@ archaeology 0.4.0
 仓库里写任何东西**——分析结果写进你缓存目录里的数据库。
 
 读侧的命令——`timeline`、`hotspots`、`files`、`file`、`structure`、`cochange`、
-`explain`——支持 `--json`，用同样的字段名把同样的事实输出给别的程序读。stdout 上只有
-JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是最新的，输出都能被解析。
-`commit` 目前还没有 JSON 形式；两个写入方 `analyze` 和 `ast` 打印的是这次做了什么。
+`explain`、`memory list`、`memory show`——支持 `--json`，用同样的字段名把同样的事实输出
+给别的程序读。stdout 上只有 JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是
+最新的，输出都能被解析。`commit` 目前还没有 JSON 形式；写入方 `analyze`、`ast` 和
+memory 的各个写入动作打印的是这次做了什么。
 
 ### 分析一个仓库
 
@@ -70,7 +78,8 @@ Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 
 重复运行会刷新已存的内容，所以加了新提交、rebase 或 amend 之后放心重跑：git 已经没有的
 提交会带着它的行一起消失，还成立的东西都留着。唯一的例外是由旧版本工具写下的数据库——
-那种情况会整表重建，结构层也在内——之后要再跑一次 `ast`。
+那种情况会把证据整表重建，结构层也在内，之后要再跑一次 `ast`——而 memory 会活过这次重建，
+因为它是这个文件里唯一一样 git 给不回来的东西。
 
 如果仓库是浅克隆，`analyze` 会在 stderr 上说明。浅克隆里最老的那个提交会被当成
 根提交，于是其中每个文件都看起来诞生在那里，合并提交也会报出它从未做过的改动。
@@ -741,6 +750,10 @@ bundle 里装着：这个提交、它碰过的文件**以及改动落在这些�
 definitions、通常和这些文件一起变的文件、更早碰过它们的提交，以及一份"读不出来的是什么"
 的清单。`bounds` 说明被截断的是什么，所以一个漏掉行的上下文不会读起来像完整的。
 
+**和这个提交有关的 memory 会显示在证据旁边**，有自己的标题，永远不在 bundle 里面——见
+[`explain` 会拿这些 memory 做什么](#explain-会拿这些-memory-做什么)。如果一条都没有，输出
+和 memory 这一层出现之前完全一样。
+
 **大到发不出去的提交，只会为模型做裁剪，不会为别的任何东西裁剪。**bundle 本身刻意不设上限
 ——文件列表提前截断会藏起被问的那个问题的答案，而读者可以往下翻——所以一个碰了一千个文件的
 提交大约有 297,000 个估算 token。发给模型的是它的一份选样：最大的那些文件改动和 definitions、
@@ -844,6 +857,339 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
 出错的读者，这和 `file --json` 永远是一个装着列表的对象是同一个理由。证据和答案并排放在一起，
 所以不必再调一次就能互相核对；JSON 里的 `confidence` 是工具数出来的那个数，不是模型自己选的。
 
+### 记住人知道的事情
+
+`memory` 是这个工具里唯一不是从仓库推导出来的部分。它存放人对项目说过的话——某条规则
+为什么存在、某个约束是为了什么、什么试过并且放弃了——存在证据旁边，**永远不把这些话当成
+证据**。这一层完全不需要模型：写一条、列出来、读回来，全程没有任何 endpoint，这正是它的
+意义。它也是数据库里唯一一样 git 给不回来的东西——证据表是缓存，它不是，这一点写在下面的
+"数据库放在哪"一节里。
+
+```console
+$ archaeology memory create "We keep the login helper in one module: the split state machine caused an incident." --about-path core/app.py --cite-commit 78c0647a --cite-file core/app.py --since-commit 392cc0db ~/projects/sample-project
+Memory      3f2a9c1e-8b47-4d6a-9f10-2c5e7a0b41d9
+Subject     core/app.py
+Evidence    2 citations
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+一条 memory 只关于一件事，四种对象就是四个 flag：整个项目（`--about-repository`）、一个
+文件（`--about-path`）、文件里的一个 definition（`--about-path` 配 `--about-definition`）、
+或者一个提交（`--about-commit`）。subject 必须在已存的历史里能解析——历史从没碰过的路径
+会被拒绝，用的是 `files` 已经用过的那句话——因为没人找得到的 memory 就是没人会读的
+memory。
+
+它是从什么来的则是可选的，写法一样，一种证据一个 flag：`--cite-commit`、`--cite-file`、
+`--cite-definition`、`--cite-range`（必须配一个 `--cite-commit`，因为 range 是某一个提交
+diff 里的一段）、`--cite-cochange`、`--cite-absence`。**每一条 citation 在写入之前都会先
+对着已存的历史核一遍**，所以 memory 不可能指向不存在的东西。没有任何 citation 的 memory，
+就是一条明说自己没有的 memory。
+
+**这句话从什么时候开始成立，由作者来说，而且可以不说**：`--since-commit`（一个 sha 或它
+的前缀，动作之前会对着已存的历史解析）或者 `--since-date`（`YYYY-MM-DD`），两个不能一起
+给——一条 memory 只有一个起点。不写就是未知，永远不是"从一开始"；而 `explain` 的
+*in force at this commit* 就是由它算出来的。关于项目的声明只被记录、从不被推断：没人写下
+日期的规则就一直是没有日期的，直到有人开口。
+
+### 列出 memory
+
+```console
+$ archaeology memory list ~/projects/sample-project
+Memories (2)
+
+1. core/app.py
+   We keep the login helper in one module: the split state machine caused an incident.
+   b7d4e2f1  active  admitted 2024-06-01 09:00:00 +0000  since 392cc0db21a7
+   evidence: commit 78c0647a, file core/app.py
+
+2. the project
+   We do not add runtime dependencies casually.
+   5e8a1c47  active  admitted 2024-06-01 08:00:00 +0000
+   evidence: none attached
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+`--limit` 和 `--all` 和别处一样，排序是最新的在前。短 id 就是 `show` 接受的写法；列表里放
+不下的长陈述会被截断，而且截断这件事本身会写出来，并指明哪条命令能读到全文。
+
+### 查看单条 memory
+
+```console
+$ archaeology memory show b7d4e2f1 ~/projects/sample-project
+Memory      b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34
+Repository  /home/you/projects/sample-project
+Subject     core/app.py
+Author      Ada Lovelace <ada@example.com>
+Admitted    2024-06-01 09:00:00 +0000
+State       active
+Since       392cc0db21a7 (2024-03-01)
+
+We keep the login helper in one module: the split state machine caused an incident.
+
+Evidence (2)
+  commit      78c0647a  resolved
+  file        core/app.py  resolved
+
+Lifecycle   nothing supersedes it
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+`Since` 是这条陈述从什么时候开始成立，没人说过时就是 `unknown`——永远不是这条 memory
+被写下的时间，那是关于数据库的事实，不是关于项目的。`Author` 是仓库 git 配置给出的身份，
+配置里没有时就是 `unknown`。
+
+每条 citation 都会被重新读一遍，状态用文字写出来：`resolved`；`no longer in this
+history`——一次 rewrite 删掉了某个提交，并不代表这条 memory 错了，工具也永远不会去改人
+写过的话；或者 `not checked`，这是列表对 range 和 co-change 的说法，因为它们分别要付出一
+次 diff 和一次走遍历史的代价，而这个代价由 `show` 来付。**subject 也按同样的方式检查，
+而且两种视图都检查**：一条关于某个文件的 memory，如果那个文件被一次 rewrite 从历史里拿掉
+了，它旁边就会写着 `(no longer in this history)`，而不是照旧打印，让人以为它还在。
+
+```console
+$ archaeology memory list --json ~/projects/sample-project
+{
+  "repository": "/home/you/projects/sample-project",
+  "head_sha": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "memories": [
+    {
+      "memory_id": "b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34",
+      "repository": "/home/you/projects/sample-project",
+      "statement": "We keep the login helper in one module: the split state machine caused an incident.",
+      "author": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.com"
+      },
+      "admitted_at": "2024-06-01T09:00:00+00:00",
+      "state": "active",
+      "subject": {
+        "kind": "path",
+        "path": "core/app.py",
+        "resolution": "resolved"
+      },
+      "since": {
+        "commit": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+        "commit_date": "2024-03-01"
+      },
+      "ended_at": null,
+      "end_reason": null,
+      "superseded_by": null,
+      "supersedes": null,
+      "citations": [
+        {
+          "kind": "commit",
+          "ref": "78c0647a",
+          "resolution": "resolved"
+        },
+        {
+          "kind": "file",
+          "ref": "core/app.py",
+          "resolution": "resolved"
+        }
+      ]
+    },
+...
+  ]
+}
+```
+
+`--json` 会给出这个仓库的全部 memory，不管 `--limit` 说了什么——一个要列表的程序要的是
+全部，这是 `files --json` 早就定下的规则。
+
+### 替换一条 memory
+
+一条说错了、或者已经不再成立的 memory，既不会被编辑也不会被删掉：用一条新陈述替换它，
+被替换的那条留在原地。
+
+```console
+$ archaeology memory supersede b7d4e2f1 "The login helper stays in one module, and it checks the session itself." --about-path core/app.py --cite-file core/app.py ~/projects/sample-project
+Memory      3f2a9c1e-8b47-4d6a-9f10-2c5e7a0b41d9
+Supersedes  b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34
+Subject     core/app.py
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+一次动作写两行：后继者按与 `create` 完全相同的 subject 与 citation 规则写入，被替换的
+那条则带着时刻和一条指向后继者的链接关闭。**没有任何东西被覆盖**——对旧 id 执行 `show`
+仍然打印当时写下的那句话，并用 `superseded by` 指出后继者——而且已经结束的 memory 不再
+接受任何动作：拒绝时会说请另记一条新的。链式替换就是一行行的链，而且只可能向前指，因为
+后继者永远是这次动作刚刚写下的那条 memory。
+
+### 结束一条 memory
+
+`invalidate` 是 memory 结束的另一种方式：没有后继者，但必须给出理由。
+
+```console
+$ archaeology memory invalidate 5e8a1c47 --reason "we allow one dependency now" ~/projects/sample-project
+Memory      5e8a1c47-3f92-4b6d-a1e8-7c2f4d9a6b53
+State       invalidated
+Reason      we allow one dependency now
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+"它错了"和"它不再适用"是两句不同的话，所以理由跟着 memory 一起留着，而不是留给读者去猜。
+一条规则重新生效时，那是一条**新的** memory——记录于是读作"生效、失效、再生效"——因为把
+一行"解除结束"会丢掉中间那一段。
+
+两种结束状态默认都不出现在 `memory list` 里，因为默认的问题是项目**现在**知道什么：
+
+```console
+$ archaeology memory list --include-ended ~/projects/sample-project
+Memories (3)
+
+1. core/app.py
+   We keep the login helper in one module: the split state machine caused an incident.
+   b7d4e2f1  active  admitted 2024-06-01 09:00:00 +0000  since 392cc0db21a7
+   evidence: commit 78c0647a, file core/app.py
+
+2. the project
+   We do not add runtime dependencies casually.
+   5e8a1c47  active  admitted 2024-06-01 08:00:00 +0000
+   evidence: none attached
+
+3. core/app.py
+   The health check belonged in core/app.py.
+   a1f3d8c2  invalidated 2024-06-01 07:30:00 +0000: it moved into its own module
+   evidence: none attached
+
+A memory is what a person stated about this project: the tool did not derive it and cannot check it. The citations are checked; the statements are not.
+```
+
+### 仓库搬家的时候
+
+数据库的文件名是仓库绝对路径的摘要，所以换到新路径的检出会拿到一个新的空数据库，memory
+看起来"消失了"。其实没有：旧文件还在缓存目录里，每一行都在。工具自己找不到它——没有任何
+东西告诉它这两个路径是同一个项目，而靠 remote URL 或某个 commit sha 去猜，正是这个项目
+拒绝做的那种推断——所以回来的路是显式的，一共三步：
+
+```bash
+# 1. 把旧文件指向新路径（这一步重写的是证据，不是 memory）
+archaeology analyze ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+
+# 2. memory 会被保留并报告出来，在 adopt 之前写入会被拒绝
+archaeology memory list ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+
+# 3. 说清楚：旧路径就是这个项目，只是换了个位置
+archaeology memory adopt --from ~/old/sample-project ~/projects/sample-project --db ~/.cache/codearchaeology/<old>.db
+```
+
+`adopt` 是第六个动作，它只改 memory 的一件事：它属于哪个仓库。陈述、作者、时间、citation
+和状态都按写下的样子保留，而且这个动作会被记进数据库，免得以后看起来像这些行一直属于这个
+检出。
+
+```console
+$ archaeology memory adopt --from ~/old/sample-project ~/projects/sample-project
+Adopted     2 memories
+From        /home/you/old/sample-project
+To          /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+**路径要写全，而且没有交互式确认。** 把路径敲出来本身就是确认——所以打错一个字就匹配不
+上，所以工具仍然可以脚本化。它会拒绝：什么都没为它写过的路径、它自己现在的路径、以及目标
+库已经有自己 memory 的情况——合并两个项目的知识，这个版本的回答是拒绝，而不是猜。
+
+`analyze` 在即将把 memory 留在视野之外时会说明——共享 `--db` 或一次搬家造成的那一刻——
+报出数量、路径，以及补完这件事的动作。工具永远不会销毁任何东西：只有删掉文件才会。
+
+### `explain` 会拿这些 memory 做什么
+
+`explain` 读的是一个提交，和它相关的 memory 会出现在证据**旁边**——同一个输出里、有自己的
+标题，而且**永远不在证据 bundle 里面**。一条 memory 算相关，当它是关于这个提交的、是关于
+这个提交改动的某个 definition 的、是关于它碰过的某个文件的（那个文件曾经叫过什么名字都
+算）、是关于整个项目的，或者它引用了这个提交。subject 越具体越靠前，然后按 admitted 时间
+由新到旧排，被上限截掉的全部计数报出来。
+
+它们分成两组，这个分法本身就是重点：**in force at this commit** 是代码写下时确实成立的
+说法；**related, not provably in force** 是其余全部——没人记下起点的，或者时间范围落在
+这个提交之外的。把第二组藏起来就是藏知识；把两组并成一组，就会让一条 2026 年的规则读起来
+像是 2023 年那个提交的原因。
+
+```console
+$ archaeology explain 78c0647a --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "commit": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+...
+  "memory": {
+    "in_force": [
+      {
+        "memory_id": "b7d4e2f1-9c3a-4e58-8f02-1a6c5d9b7e34",
+        "repository": "/home/you/projects/sample-project",
+        "statement": "We keep the login helper in one module: the split state machine caused an incident.",
+        "author": {
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        },
+        "admitted_at": "2024-06-01T09:00:00+00:00",
+        "state": "active",
+        "subject": {
+          "kind": "path",
+          "path": "core/app.py",
+          "resolution": "resolved"
+        },
+        "since": {
+          "commit": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+          "commit_date": "2024-03-01"
+        },
+        "ended_at": null,
+        "end_reason": null,
+        "superseded_by": null,
+        "supersedes": null,
+        "citations": [
+          {
+            "kind": "commit",
+            "ref": "78c0647a",
+            "resolution": "resolved"
+          },
+          {
+            "kind": "file",
+            "ref": "core/app.py",
+            "resolution": "resolved"
+          }
+        ]
+      }
+    ],
+    "not_provably_in_force": [
+      {
+        "memory_id": "5e8a1c47-3f92-4b6d-a1e8-7c2f4d9a6b53",
+        "repository": "/home/you/projects/sample-project",
+        "statement": "We do not add runtime dependencies casually.",
+        "author": {
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        },
+        "admitted_at": "2024-06-01T08:00:00+00:00",
+        "state": "active",
+        "subject": {
+          "kind": "repository",
+          "resolution": "resolved"
+        },
+        "since": null,
+        "ended_at": null,
+        "end_reason": null,
+        "superseded_by": null,
+        "supersedes": null,
+        "citations": []
+      }
+    ]
+  }
+}
+```
+
+`memory` 是 `evidence` 的兄弟键，永远不是它内部的一个键；而且**没有内容可显示时它就不
+存在**——一个提交如果它的文件上没有任何 memory，打印出来和 v0.4 一模一样。里面的每条
+memory 就是 `memory show --json` 打印的那个对象，所以程序在哪里读到它，形状都一样。
+
+**模型看到的是同一份 section，而且带一个说明它是什么的标题**，指令也告诉它可以拿它做
+什么：memory 可以支撑一个候选原因，但永远不能被当成证据引用、也不能被写成观察到的事实。
+答案可以按 id 指向某条 memory，这个 id 会对照模型真正看到的那份 section 检查。然后陈述
+由工具从库里原样打印——不是模型的转述——模型那句话跟在下面，标明那是它的解读。
+
 ### 重新跑 `analyze` 不会把结构清掉
 
 `analyze` 和 `ast` 写的是不同的表，而 `analyze` 只删除 git 已经没有的东西：一次 rebase
@@ -874,7 +1220,9 @@ Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
 
 第二次 `ast` 只解析了那一个新版本，复用了已经读过的六个——正是 `analyze` 留下的那六个。
 如果 `analyze` 把结构扔掉了，这一行会变成 `7 parsed, 0 reused`。唯一会清掉它的是 schema
-重建，而那是在造一个新库，不是对同一个库重扫。
+重建，而那是在造一个新库，不是对同一个库重扫。重建也正是"缓存例外"存在的理由：重建会
+丢掉每一张"行能从 git 重新拿到"的表，而 memory 的表不在那张名单上，所以库里的 memory
+会活过重建。
 
 ### 数据库放在哪
 
@@ -888,6 +1236,14 @@ Database     /home/you/.cache/codearchaeology/82d48b376e387fde.db
 
 设置环境变量 `CODEARCHAEOLOGY_CACHE_DIR` 可以换地方，或者给任意命令加 `--db` 直接
 指定文件。
+
+**数据库不再只是一份缓存了，这是 v0.5 要带走的那句话。** 工具推导出来的一切都是仓库之上
+的一层缓存：每一行证据都能靠重读 git 重建，所以 schema 换代时旧库的证据直接丢掉重读就行。
+**memory 行什么也重建不了**——那是人说过的话——而它就在同一个文件里。所以 schema 重建会
+把它们留着，而删掉这个文件就会把它们删掉：替换它之前先复制一份。工具读不出一个数据库时
+会这么说，原因就是这个。一个数据库只装一个仓库的 memory：把 `analyze` 指向另一个仓库的库
+会接管证据、但把 memory 留下，此后 memory 命令会说明这些 memory 属于谁，而不是把它们混
+进来。
 
 ## 性能
 
@@ -924,6 +1280,38 @@ $ uv run python benchmarks/benchmark.py --commits 10000 50000 100000 200000
   也确实是两个不同的问题：按名字回答的是「这个路径」，按身份回答的是「这个文件跨过它
   所有改名的历史」。
 
+### memory 存储，单独测过
+
+`benchmarks/memory_benchmark.py` 单独测量这一层，规模由你指定：
+
+```console
+$ uv run python benchmarks/memory_benchmark.py --sizes 10 100 1000 10000 100000
+```
+
+| Memories | 数据库 | `create` | `memory list` | `memory list --json` | `memory show` | `explain` 的 section |
+|---|---|---|---|---|---|---|
+| 10 | 120 KB | 14.0ms | 35.0ms | 37.3ms | 35.7ms | 0.5ms |
+| 100 | 156 KB | 13.8ms | 36.4ms | 41.1ms | 33.9ms | 1.0ms |
+| 1,000 | 484 KB | 14.5ms | 37.6ms | 76.6ms | 33.1ms | 8.2ms |
+| 10,000 | 3.7 MB | 14.1ms | 40.2ms | 453ms | 35.0ms | 82ms |
+| 100,000 | 37.2 MB | 20.4ms | 78.4ms | 4.74s | 46.6ms | 1.11s |
+
+`create` 是一次准入，取二十次的批量计时；其余是整个命令或整个调用，取三次里最快的一次。
+一条 memory 约占 380 字节。
+
+- **写入不会越来越贵。** 十条时约 14ms，十万条时约 20ms——而且其中大部分是这个动作自己的
+  检查，不是插入本身。
+- **读一条也不会。** `memory show` 是平的，因为它按 id 查一行。
+- **`memory list` 现在也是平的，这是量出来的结果。** 它原来是线性的——一万条时 843ms——
+  因为它为了打印二十条而把整个库读回来。现在读取在切片处就停，后面的数量单独数；子行
+  （citation、反向的生命周期链接）按"真正读到的那些 id"去取，而不是重新扫一遍整个库。
+  十万条时，切片读取从 495ms 降到 0.1ms，整库读取从 748ms 降到 340ms。
+- **`--json` 按约定就是线性的。** 一个要列表的程序要的是全部，所以十万条 memory 是 4.74s、
+  一个几十兆的文档。修法是 subject 过滤，它排在 v0.5.0 之后的第一位。
+- **`explain` 每次要为整个库付一次钱。** 选出与某个提交相关的 memory，会把这个仓库的全部
+  memory 读出来在 Python 里过滤，因为六种关系里有"文件曾经的名字"和"definition 的名字"，
+  光靠 schema 查不出来。十万条时这是在一条本来就要重建上下文的命令上再加 1.11s。
+
 ### 结构层，单独测量
 
 `ast` 是工具里昂贵的那一半，所以 benchmark 按阶段计时，并把这一趟跑三次：**cold**（库
@@ -958,7 +1346,7 @@ $ uv run python benchmarks/benchmark.py --commits 10000 50000 100000 200000
 
 ```
 src/codearchaeology/
-    cli.py          Typer 应用与十个命令
+    cli.py          Typer 应用与它的各个命令
     analysis.py     一次分析：读仓库、写数据库
     ast_pass.py     AST 这一趟：读每个 Python 文件版本，存下它的结构
     cache.py        分析数据库放在哪
@@ -981,6 +1369,10 @@ src/codearchaeology/
     explanation.py  答案的形状、给模型的指令，以及文本块
     validation.py   决定一份答案能不能展示的三趟检查
     provider.py     工具里唯一被允许触网的模块
+    memory.py       memory 存储：表、动作，以及版本戳
+    memory_checks.py  把一个 subject 和一条 citation 对着证据核一遍
+    memory_view.py  memory 的文本块、JSON 对象，以及结尾那句话
+    memory_section.py  哪些 memory 属于某个提交旁边，以及它们怎么展示
     formatting.py   两个视图共用的小工具
 tests/
     sample_repo.py  构造一个确定性的小仓库供测试使用
@@ -990,11 +1382,12 @@ benchmarks/
     cochange_benchmark.py  co-change 分析随历史增长的成本
     index_benchmark.py     每个数据库索引买到了什么、花了什么
     context_benchmark.py   解释用的 bundle 有多大，按 section 拆开看
+    memory_benchmark.py    memory 存储随规模增长的成本，从十条到十万条
 ```
 
 ## 核心原则
 
-以下七条不是口号，它们约束代码被允许怎么写。
+以下八条不是口号，它们约束代码被允许怎么写。
 
 1. **Core First** —— 核心不能依赖 LLM。任何功能都必须能完全不用 AI 跑通。
    AI 只是上面的一层，永远不是地基。由 `tests/test_offline.py` 用两种方式守住：
@@ -1016,6 +1409,16 @@ benchmarks/
    `tests/test_explain.py`（开头那句，以及它不出现在 JSON 里）和结构本身守住——而结构是否
    还成立，由 `tests/test_validation.py` 和 `tests/test_boundaries.py` 看着：解读无法被伪装成
    观察，引用不到东西的答案会被整份拒绝。完整表述在 `docs/v0.4-problem-definition.md` §12。
+8. **memory 是人说过的，永远不是证据** —— 库里唯一不是工具推导出来的部分：由人用明确
+   的动作写下的陈述，连着它关于什么、以及它是由哪些证据来的（可以一条都没有）。它显示
+   在证据**旁边**，永远不在证据里面；模型会被告知它是什么；答案可以按 id 指向某一条，
+   但永远不能把某一条当成事实来引用；模型写的任何东西都不会被存进库里。五条硬规则写在
+   `docs/v0.5-design.md` §13.2，边界本身由 `tests/test_memory_boundaries.py` 守住：
+   每条证据侧命令都在 memory 库读不出来的情况下跑一遍；每条读取命令都和"库里一条 memory
+   都没有"的数据库逐字节对比；只有命令行能调用写入动作；memory 的 id 当作六种证据里的
+   任何一种都会被拒绝。**反方向也是关死的**：模型的答案可以指向一条 memory，却永远不能
+   创建或修改一条——`provider.py` 不从包里 import 任何东西，所以"模型永远不写 memory"
+   是关于 provider *是什么* 的一句话，而不是它遵守的一条规则。
 
 ## 路线图
 
@@ -1025,7 +1428,7 @@ benchmarks/
 | v0.2 | 文件生命周期、代码热点，以及给别的程序读的 JSON 输出 | 已完成 |
 | v0.3 | AST 分析、函数与类的演化，以及 co-change | 已完成 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 已完成——`explain`，带 OpenAI 兼容的 provider |
-| v0.5 | Developer Memory —— 你自己的技术使用轨迹 | 计划中 |
+| v0.5 | Developer Memory —— 人知道的事情，存在证据旁边 | 已完成——`memory create`、`list`、`show`、`supersede`、`invalidate`、`adopt`，`explain` 会把相关的那些显示在证据旁边 |
 | v0.6 | AI 参与的改动分析与回放 | 计划中 |
 
 每个阶段一次只做一个，前一个稳定之前不设计后一个。
@@ -1034,6 +1437,28 @@ benchmarks/
 
 ## 已知限制
 
+- **memory 是陈述，不是事实。** 工具没有推导它，也无法核对它；工具核对的是引用，而一条
+  引用解析成功并不代表那句话是真的。memory 说的任何东西都不会被当成证据，而唯一会读
+  memory 表的命令是 `explain`——它把 memory 放在证据旁边、有自己的标题，永远不在 bundle
+  里面。
+- **memory 的起点是一个声明，而大多数 memory 都没有。** `--since-commit` 和
+  `--since-date` 就是一个人给出它的方式，而且它们按设计就是可选的：没人写下日期的
+  memory 显示在 "related, not provably in force" 下面，而不是被假定为从一开始就成立。
+- **模型可以把一条 memory 改写成一条观察，而没有任何检查能抓住它。** 规则是 memory 可以
+  支撑一个解读、永远不能变成一个观察；工具能守住的是结构——section 是分开的、citation
+  是被核对的、陈述是从库里原样打印的。而一句把 memory 转述成 observed change、旁边还挂着
+  一个真实 citation 的话，能通过现有每一道检查。`tests/test_memory_boundaries.py` 把这一点
+  钉成一个已知的限制，而不是留给以后去发现。
+- **一条 memory 有两种结束方式，没有任何编辑方式。** 被新陈述替换（`supersede`），或者
+  带着理由结束（`invalidate`）；没有删除、没有原地编辑，而且两种状态都是终态——规则重新
+  生效是一条新的 memory。写错的陈述就用 invalidate 并说明写错了。
+- **一条 memory 只存在一个地方。** 库里其他任何东西都能靠重读 git 重建；memory 不能，
+  因为它是人说过的话。删掉数据库文件就会删掉里面的 memory，别的任何东西都找不回来——
+  所以替换这个文件、或清理缓存目录之前，先把它复制一份。导出/导入还没有做。
+- **仓库搬家要三步，工具没法缩短它。** 数据库是按路径命名的，所以换到新路径的检出会去找
+  另一个文件。回来的路是 `analyze --db <旧文件>` 再 `memory adopt --from <旧路径>`，写在
+  上面的"仓库搬家的时候"一节里。自己去找旧文件，等于要猜两个路径是同一个项目，而这个工具
+  不做这种猜测。
 - **两个方向上都还没有增量。** `analyze` 重扫全部历史，把每个提交、每个父提交、每一行
   文件改动都重写一遍——二十万提交时，它 85% 的时间就是这次重写。AST 这一趟每次都会走遍
   所有 Python 文件版本：它不解析已经解析过的、也不写已经存好的，但仍然要把每个 blob 和

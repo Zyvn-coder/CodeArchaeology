@@ -122,6 +122,20 @@ Rules, and an answer that breaks one is rejected rather than corrected:
    carrying `ranges_total` holds only its first spans. Never read a list as
    complete when a `selection` is present, and never make a claim about what is
    not shown.
+8. After the evidence there may be a `memories` section. It is what people
+   stated about this project: the tool keeps those statements, did not derive
+   them, and cannot check them. **They are not evidence.** Never cite one in
+   `evidence`, never put one in `observed_changes`, and never write one into
+   `uncertainty` as something that was determined. The one place a memory
+   belongs is `possible_reasons`, where a candidate is offered and not asserted.
+9. Never present a memory as something that was observed. "The history shows X"
+   is a claim about the evidence; if X is only in a memory, say the people
+   involved recorded it, and let it be a candidate reason.
+10. If a memory bears on your answer, name it in `related_memory` by its
+    `memory_id`, with one sentence saying what the answer takes from it. An id
+    that is not in the section you were shown is a rejected answer. `related_memory`
+    may be empty, and it must be empty when nothing in the section bears on this
+    commit.
 
 Answer with this shape:
 
@@ -145,6 +159,10 @@ Answer with this shape:
   "uncertainty": [
     {"kind": "one of the absence kinds above, or 'definition_gone'",
      "detail": "what could not be determined"}
+  ],
+  "related_memory": [
+    {"memory_id": "copied from the memories section, if there is one",
+     "note": "one sentence, what this answer takes from that statement"}
   ]
 }
 
@@ -216,6 +234,19 @@ class Uncertainty:
 
 
 @dataclass(frozen=True, slots=True)
+class RelatedMemory:
+    """One memory an answer related itself to, and the model's sentence about it.
+
+    The id is the model's to name and the tool's to check: it has to be one the
+    model was shown. The note is the reading, never the record — the statement
+    itself is printed from the store, by the tool.
+    """
+
+    memory_id: str
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
 class Explanation:
     """One answer, checked and ready to print."""
 
@@ -224,24 +255,36 @@ class Explanation:
     evidence: tuple[Evidence, ...]
     possible_reasons: tuple[PossibleReason, ...]
     uncertainty: tuple[Uncertainty, ...]
+    related_memory: tuple[RelatedMemory, ...] = ()
 
 
-def build_prompt(context_json: str) -> str:
+def build_prompt(context_json: str, memories: str = "") -> str:
     """The instructions and the evidence, as one request.
 
     The evidence is handed over exactly as it was built: the bundle itself when
     it fits, and the reduced view ``selection`` made when it does not. The
     offline path prints the bundle either way, so a citation can be checked
     against it whatever the model was sent.
+
+    ``memories`` is the memory section, already rendered by
+    ``memory_section.prompt_section``. It is appended rather than merged: the
+    bundle stays exactly what v0.4 froze, and the section is the second,
+    separately-labelled input the phase adds. With no memories the prompt is the
+    bytes it has always been.
     """
-    return f"{INSTRUCTIONS}\nThe evidence:\n\n{context_json}\n"
+    return f"{INSTRUCTIONS}\nThe evidence:\n\n{context_json}\n{memories}"
 
 
 EXPLAINED = "explained"
 EVIDENCE_ONLY = "evidence_only"
 
 
-def build_object(explanation: "Explanation | None", context, selection: dict | None = None) -> dict:
+def build_object(
+    explanation: "Explanation | None",
+    context,
+    selection: dict | None = None,
+    memory: dict | None = None,
+) -> dict:
     """The whole answer for a program, whichever kind of answer it is.
 
     One shape in both states, with ``state`` saying which one it is, because the
@@ -258,6 +301,13 @@ def build_object(explanation: "Explanation | None", context, selection: dict | N
     shown of it when the commit was too large to send whole: the evidence here is
     always the bundle, and a program that wants to know how much of it the model
     saw reads this rather than assuming the two are the same.
+
+    ``memory`` is the third thing, and it is a sibling of ``evidence`` rather
+    than a part of it: the bundle under ``evidence`` is what v0.4 built, byte for
+    byte, and a program reading it gets exactly what it got before. The key is
+    **absent when there is nothing to show**, which is the rule ``selection``
+    already follows — an absent key is a statement, and its absence says this
+    commit's files carry no stored memory.
     """
     found = {
         "commit": context.sha,
@@ -267,11 +317,16 @@ def build_object(explanation: "Explanation | None", context, selection: dict | N
     }
     if selection is not None:
         found["selection"] = selection
+    if memory is not None:
+        found["memory"] = memory
     return found
 
 
 def build_json(
-    explanation: "Explanation | None", context, selection: dict | None = None
+    explanation: "Explanation | None",
+    context,
+    selection: dict | None = None,
+    memory: dict | None = None,
 ) -> str:
     """The answer as JSON — the bytes a program reads, and only those.
 
@@ -279,7 +334,9 @@ def build_json(
     caller can parse stdout without filtering it first.
     """
     return json.dumps(
-        build_object(explanation, context, selection), indent=2, ensure_ascii=False
+        build_object(explanation, context, selection, memory),
+        indent=2,
+        ensure_ascii=False,
     )
 
 
@@ -317,6 +374,10 @@ def _explanation_object(explanation: Explanation) -> dict:
         "uncertainty": [
             {"kind": item.kind, "detail": item.detail}
             for item in explanation.uncertainty
+        ],
+        "related_memory": [
+            {"memory_id": item.memory_id, "note": item.note}
+            for item in explanation.related_memory
         ],
     }
 
