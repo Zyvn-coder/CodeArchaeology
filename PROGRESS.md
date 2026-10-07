@@ -10,15 +10,15 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-07. v0.5 is complete in the tree — all twelve units, the
-release audit included — and the audit is green: 921 tests on the development
-interpreter and 921 on the 3.11 floor, the CLI, JSON, README and documentation
-contracts, the offline check, the version in its five copies, the schema at 4 with
-memory's stamp at 1, and a clean secret scan.** The tree is at 0.5.0, both READMEs
-carry replayed blocks for everything, and `docs/v0.5-final-state.md` is the record.
-What is left is the release itself — commit, push, all four CI jobs green, tag,
-GitHub Release — which the user's standing rule reserves to them, plus the two
-measured linear costs the READMEs name. `docs/v0.5-design.md` is the
+**Last updated: 2026-10-07. v0.5.0 is released: an annotated tag at `e3c55d0`
+with a GitHub Release, made after all four CI jobs passed on that commit.** All
+twelve units are in the tree and the audit's nineteen rows are below; the first
+push of the release was red on all four jobs, and what it found was a real defect
+in three tests (trap 41) that was fixed before anything was tagged. The tree is at
+921 tests and 0.5.0 in the five places `tests/test_cli.py` compares. What is left
+is the two measured linear costs the READMEs name, with their fixes queued:
+subject filtering on `list`, and a SQL prefilter for `explain`'s section.
+`docs/v0.5-design.md` is the
 definition, `docs/v0.5-storage-design.md` the data model,
 `docs/v0.5-cli-design.md` the command line and `docs/v0.5-final-state.md` the
 record. v0.4.0 is released: tagged at `07e3da7` with a GitHub Release, after all
@@ -680,21 +680,31 @@ with, and what it found:
 | Version | the five copies `tests/test_cli.py` compares | **0.5.0** in `pyproject.toml`, `__version__`, both READMEs and the CHANGELOG's newest section |
 | Schema | `storage.SCHEMA_VERSION`, `memory.MEMORY_SCHEMA_VERSION`, `storage.TABLES` | **"4"** and **"1"** — the evidence schema unchanged by v0.5, memory's stamp owned by the memory module, and the memory tables not in `TABLES` |
 | Secrets | a scan of the new files and the diff for keys, tokens, private keys and real addresses | clean; the only addresses in the tree are `@example.com` fixtures |
-| git clean | `git status --porcelain` | **not clean, by design**: 16 modified and 18 untracked files, which is the whole of v0.5 waiting for its release commit |
-| main = origin/main | `git status -sb` | level at `f27ebbf`, tree dirty — the branch has nothing to push and the work has nowhere to go until the release commit is made |
-| CI | `gh run list` | the last pushed commit (`f27ebbf`) is green on all four jobs; **the v0.5 tree has never been pushed**, so it has never been through the Ubuntu or Windows runners |
-| Release tag | `git tag -l` | `v0.4.0` is the newest; `v0.5.0` does not exist yet, and the release order says it goes on a commit whose own CI is green |
+| git clean | `git status --porcelain` | clean at the release commit; before it, 16 modified and 18 untracked files — the whole of v0.5 waiting for that commit |
+| main = origin/main | `git status -sb` | level at every push: `f27ebbf` before, `9d81acf` after the release commit, `e3c55d0` after the fix |
+| CI | `gh run list`, `gh run view --log-failed` | the first push of the v0.5 tree (`9d81acf`) was **red on all four jobs**; the fix (`e3c55d0`) is **green on all four** (run `37617173569`) |
+| Release tag | `git tag -l` | `v0.5.0` is an annotated tag on `e3c55d0` — the commit whose four CI jobs are green, not the release commit, whose own CI was red |
 
 Two things the audit is worth keeping for, beyond the rows:
 
 - **The floor was checked on the whole suite, not a subset.** v0.4's audit ran the
   AI files separately and counted them; here the 3.11 run is the entire suite,
   because a supported interpreter is a claim about everything that runs on it.
-- **CI is the one check that cannot be done locally, and this tree has never been
-  through it.** The v0.4 audit found the same thing and said so: the release order
-  puts the tag after that run rather than before it, which is why the last three
-  rows — the clean tree, `main = origin/main`, and the tag — are the release's own
-  first steps rather than checks that can be satisfied in advance.
+- **CI is the one check that cannot be done locally, and it earned its place
+  again.** The first push of the v0.5 tree was red on **all four** jobs, and what
+  it found was a real defect rather than a bad block: three tests asserted on the
+  colourised bytes of a usage error and therefore passed on a machine with colour
+  off and failed wherever it is on (trap 41). The v0.4 audit found the same class
+  of thing from the other side — a defect only the Windows runner could see. The
+  release order puts the tag after that run rather than before it, and this is
+  the second release in a row where the order saved a tag from having to move.
+
+**The release itself, as it happened:** the release commit `9d81acf` was pushed
+and was red on all four jobs; the fix `e3c55d0` was pushed and was green on all
+four (run `37617173569`, 8m18s at the slowest); `v0.5.0` is an annotated tag on
+that commit — the tag carries the release notes, and the GitHub Release beside it
+carries the same text. The tag is on the *second* commit for the same reason
+v0.3.1's was: a tag whose own CI is red is worse than a tag that moves.
 
 ## The v0.4 release audit, 2026-10-06
 
@@ -743,10 +753,11 @@ boundary suite (`tests/test_memory_boundaries.py`), the hardening unit that buil
 the documentation and contract unit that produced
 `docs/v0.5-final-state.md`, the READMEs' exception statements and
 `tests/test_contract.py`. The tree is at 921 tests and the version is 0.5.0. Unit
-12, the release audit, is run and green — its nineteen rows are above — and the
-release itself (commit, push, CI, tag, Release) is the next step and the user's
-to call, with the two measured linear costs (`memory list --json`, `explain`'s
-section) the known debt and their fixes named.
+12, the release audit, is run and green — its nineteen rows are above, and its
+first push was red on all four jobs before the fix that made them green. v0.5.0 is
+released: annotated tag `v0.5.0` at `e3c55d0` with a GitHub Release. What remains
+is the known debt with its fixes named: `memory list --json` and `explain`'s
+section are both linear in the store's size.
 
 **v0.4 has begun, in documents.** Fourteen units are written: `docs/v0.4-problem-definition.md`
 fixes the question — one commit, what happened and which candidate reasons the
