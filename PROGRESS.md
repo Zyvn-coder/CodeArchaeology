@@ -1833,6 +1833,23 @@ now says the limit is on language, not on when to start.
     **A benchmark's fixture is part of its result**, and the row that looked
     smallest was the one that was wrong.
 
+41. **A test that asserts on captured output is asserting on the environment.**
+    Three tests checked that a usage error names the option the person typed —
+    `No such option: --json`, `Missing option '--from'`, `Missing option
+    '--reason'` — by looking for the sentence in `result.stderr`. Typer renders a
+    usage error through Rich, and Rich styles the option name on its own, so with
+    colour on the sentence is not a substring of the bytes: it is
+    `No such option: ` + escape + `--json` + escape. Whether colour is on is the
+    environment's business and not the tool's — a runner has it forced on, a
+    developer's shell usually has it off — so all three passed on the machine
+    they were written on and were red on **all four** CI jobs. `tests/cli_text.py`
+    now reads the words instead, and the fix was checked with `FORCE_COLOR=1`,
+    `PY_COLORS=1` and `TTY_COMPATIBLE=1`, the three ways Rich can be told to
+    colour a stream that is not a terminal. **This is trap 35's family**: the
+    local machine and the runner differ in something the tool does not control,
+    and only the runner can see it — which is why the release order runs CI
+    before the tag and not after it.
+
 ## Environment notes
 
 - **Pushing works over SSH on port 443**, through a repository deploy key and the

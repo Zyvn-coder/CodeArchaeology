@@ -36,6 +36,7 @@ from codearchaeology.memory import (
     supersede,
 )
 from codearchaeology.storage import connect
+from cli_text import plain
 
 runner = CliRunner()
 
@@ -510,7 +511,8 @@ def test_invalidate_without_a_reason_is_a_usage_error(
     result = _run(sample_repo, database, "invalidate", written.memory_id)
 
     assert result.exit_code == 2
-    assert "--reason" in result.stderr
+    # The sentence, not the bytes: a colourised message has escapes inside it.
+    assert "--reason" in plain(result.stderr)
 
 
 def test_the_replaced_statement_is_still_there_afterwards(

@@ -21,6 +21,7 @@ from codearchaeology.analysis import analyze
 from codearchaeology.cli import app
 from codearchaeology.memory import read_memories
 from codearchaeology.storage import connect
+from cli_text import plain
 from sample_repo import build_sample_repo, build_single_commit_repo
 
 runner = CliRunner()
@@ -287,7 +288,8 @@ def test_adopt_without_from_is_a_usage_error(moved) -> None:
     result = _run(after, database, "adopt")
 
     assert result.exit_code == 2
-    assert "--from" in result.stderr
+    # The sentence, not the bytes: a colourised message has escapes inside it.
+    assert "--from" in plain(result.stderr)
 
 
 # --- the other state it repairs ----------------------------------------------

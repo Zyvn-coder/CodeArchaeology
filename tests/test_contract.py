@@ -27,6 +27,7 @@ from typer.testing import CliRunner
 from codearchaeology.analysis import analyze
 from codearchaeology.ast_pass import run_ast_pass
 from codearchaeology.cli import app
+from cli_text import plain
 
 # The walker that knows a group's commands are commands too. It lives beside the
 # README checker because that is where the drift it catches first appeared.
@@ -248,7 +249,8 @@ def test_commit_still_has_no_json_form(contract) -> None:
     # Click's own usage-error code rather than the tool's 0 and 1: an unknown
     # option never reaches the tool.
     assert result.exit_code != 0
-    assert "No such option: --json" in result.stderr
+    # The sentence, not the bytes: a colourised message has escapes inside it.
+    assert "No such option: --json" in plain(result.stderr)
 
 
 def test_a_refusal_is_a_sentence_on_stderr_and_nothing_on_stdout(contract) -> None:

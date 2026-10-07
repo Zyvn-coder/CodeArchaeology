@@ -84,6 +84,12 @@ five rules that keep memory out of the evidence layer are §13.2.
   tables were dropped by hand still claimed the current stamp and listed zero
   memories to somebody who had written a hundred. It is now its own refusal: the
   store is asked to account for what it claims rather than read as empty.
+- **Three tests read a usage error's colour instead of its words.** Typer renders
+  a usage error through Rich, which styles the option name inside the sentence,
+  so with colour on `No such option: --json` is not a substring of the bytes the
+  command wrote. All three passed on the machine they were written on and were
+  red on all four CI jobs; `tests/cli_text.py` now reads the captured output with
+  the escape sequences taken out.
 
 ## [0.4.0] - 2026-10-06
 
