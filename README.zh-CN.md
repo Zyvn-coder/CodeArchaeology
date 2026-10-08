@@ -4,7 +4,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.5.1 功能已完整——代码树里写的就是 0.5.1，下一步是发布。** 现在有十七个
+> **状态：v0.5.1 已发布——注释 tag `v0.5.1`，附 GitHub Release，四个 CI job 在该提交
+> 上全部通过之后才打的。** 现在有十七个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
 > 的七个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`）
 > ——它们把人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git

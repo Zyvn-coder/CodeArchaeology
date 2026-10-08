@@ -4,9 +4,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.5.1 is feature-complete — the tree says 0.5.1 and the release is
-> the next step.** Seventeen commands work today: the ten of v0.4 — through
-> `explain`, the only one that talks to a model — plus seven memory acts
+> **Status: v0.5.1 is released — annotated tag `v0.5.1`, with a GitHub Release,
+> made after all four CI jobs passed on that commit.** Seventeen commands work
+> today: the ten of v0.4 — through `explain`, the only one that talks to a model —
+> plus seven memory acts
 > (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt` and
 > `export`), which keep what people know about the project beside the evidence and
 > never treat it as evidence. **The evidence rows can be rebuilt from git; the

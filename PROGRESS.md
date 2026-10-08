@@ -10,23 +10,28 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-08. Phase 2 is prepared and not run.** The understanding
-experiment — the first test of the product claim rather than the tool — is
-designed in `docs/v0.5-understanding-experiment.md`, two calibrated questions
-carry their ground truth, the materials are printable, and the decision rule is
-declared before any data exists. **It needs six to eight people and cannot be run
-by an agent.** Preparing it was not free: the tool was pointed at a codebase with
-11.7 years of history for the first time (`analyze` 1.0 s, `ast` 24.8 s), two of
-the audit's reasoned claims failed measurement, and `git blame` turned out to be
-the instrument — a site is worth asking about when blame lands on a rewrite rather
-than on the decision. **v0.5.1 is built and not released:** the tree says 0.5.1 in
-the six places that are compared, and the release — CI, tag, GitHub Release — is
-the next step and the user's to call. `docs/v0.5-product-audit.md`
+**Last updated: 2026-10-08. v0.5.1 is released: an annotated tag at `1a14370` with
+a GitHub Release, made after all four CI jobs passed on that commit.** The tree
+says 0.5.1 in the six places that are compared and the suite is at 946 tests,
+green locally on 3.11 and 3.13 and then on the runner. **Nothing went red this
+time** — the first release here that needed no second commit since v0.4.0 — and
+the reason is worth keeping: the two new README blocks were replayed locally on
+Windows *before* the push, which is where v0.5.0's three failures would have been
+caught. Phase 2 is prepared and not run: the understanding experiment — the first
+test of the product claim rather than the tool — is designed in
+`docs/v0.5-understanding-experiment.md`, two calibrated questions carry their
+ground truth, the materials are printable, and the decision rule is declared
+before any data exists. **It needs six to eight people and cannot be run by an
+agent.** Preparing it was not free: the tool was pointed at a codebase with 11.7
+years of history for the first time (`analyze` 1.0 s, `ast` 24.8 s), two of the
+audit's reasoned claims failed measurement, and `git blame` turned out to be the
+instrument — a site is worth asking about when blame lands on a rewrite rather
+than on the decision. `docs/v0.5-product-audit.md`
 is the audit: it found the value claim unverified (no user, no experiment, 0
 forks and 0 issues on a public repository), three scenarios pointing at one
 missing capability, and the fact that the v0.5 data model already paid for export
 with its UUID ids. `docs/v0.5.1-portability-design.md` is the freeze, and its §8
-carries six amendments the building made to it. The tree is at 946 tests. **v0.5.0
+carries six amendments the building made to it. **v0.5.0
 is released: an annotated tag at `e3c55d0` with a GitHub Release, made after all
 four CI jobs passed on that commit.** All twelve units are in the tree and the
 audit's nineteen rows are below; the first push of the release was red on all four
@@ -42,6 +47,50 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The v0.5.1 release, 2026-10-08
+
+**Four steps, in the order the rule fixes, and the rule held.** One command and
+one document, so it was a small release; the sequence is the same as every other
+one and the interesting part is what was checked *before* the push.
+
+1. **Verify, locally, before anything is pushed.** `uv run pytest` on 3.13
+   (**946 passed**) and `uv run --python 3.11 pytest` on the floor (**946
+   passed**). The Python floor is the half that is easy to skip and it is the
+   half a runner will find.
+2. **Commit.** Two, not one, and deliberately: `f6cba0d` is the experiment design
+   and `1a14370` is the release — two subjects that deserve two commits, and the
+   experiment document is committed first so that the release commit's PROGRESS
+   entry can refer to something that already exists. Both carry a one-line
+   message, which is this project's shape: the long prose goes in the tag.
+3. **Push, then wait for the runner.** `37740067945`: Ubuntu 3.11 and 3.13 green,
+   then Windows 3.11 and 3.13 green. **The tag is placed only after this**, which
+   is the sentence the whole order exists for — a tag whose own CI is red is worse
+   than a tag that moves.
+4. **Tag, then release.** `git tag -a v0.5.1 1a14370`, verified to dereference to
+   the commit whose `headSha` the green run reported; then
+   `gh release create` with `--notes-file`. **The tag message and the release body
+   are the same 24 lines**, which is the convention v0.5.0 set and the check is a
+   one-line diff. The release is Latest, not a draft and not a prerelease.
+
+**What is worth carrying forward: the local replay is why nothing went red.** Two
+new README `console` blocks were added by this release, and both were replayed by
+`tests/test_readme.py` on Windows before the push — which is exactly where
+v0.5.0's three failures lived (trap 41) and where v0.3.1's did (trap 35). **Run
+the README checker on the platform you are on, before pushing.** It is the
+cheapest half of the CI run and the only half that can be run early.
+
+**A defect this release found in the previous one, and nobody had noticed.** The
+README's status line is the first thing a reader sees, and after v0.5.0 was
+released it still said *"the release is the next step"* — at `1c2bebd`, the commit
+whose whole purpose was to record that the release had happened. **Nothing tests
+that line.** `tests/test_cli.py` compares the five copies of the *version*, and
+the README checker replays `console` blocks, but no test reads the status
+sentence, so it drifts and stays drifted. Both READMEs now say v0.5.1 is released,
+and the gap is recorded rather than fixed with a test: a test would have to pin
+the sentence's format, and the honest guard is narrower — **the status line must
+name the newest CHANGELOG version**, which is checkable without pinning the
+prose. That is a small unit of its own if it is ever worth doing.
 
 ## Phase 2: the understanding experiment, 2026-10-08
 
@@ -885,7 +934,7 @@ Two things the audit is worth keeping for, beyond the twelve rows:
 
 ## Where the project stands
 
-**v0.5.1 is built and unreleased.** It is the first half of memory portability:
+**v0.5.1 is released.** It is the first half of memory portability:
 `docs/v0.5-product-audit.md` is the audit that decided the route — it separated
 the *data-protection* half of the question, which does not depend on whether the
 tool helps anyone understand code, from the *sharing* half, which does —
@@ -893,8 +942,16 @@ tool helps anyone understand code, from the *sharing* half, which does —
 the `memory export` command are the build, `tests/test_memory_export.py` is its
 twenty-three tests, and §8 of the freeze carries six amendments the building made
 to it. The tree is at 946 tests and the version is 0.5.1 in the six places
-`tests/test_cli.py` and the CHANGELOG compare. **The release is the next step and
-the user's to call.** `memory import` is deliberately not here.
+`tests/test_cli.py` and the CHANGELOG compare. The tag is at `1a14370`, all four
+CI jobs were green on it before it was placed, and the release record is above.
+**One correction the audit itself needed, found while preparing the next phase:**
+export alone is not a backup. It gets the memories *out* of the database, and
+nothing can put them *back in* until there is an import — so the *data-protection*
+half of portability is only half delivered, and a minimal import (this
+repository, an empty store, a file about another repository refused) is the cheap
+piece that completes it **without** waiting for the pilot. `memory import` in
+full — forks, merges, another repository's knowledge — is the sharing half and is
+deliberately not here.
 
 **v0.5 is complete in the tree.** Eleven units: three design freezes
 (`docs/v0.5-design.md` the definition, `docs/v0.5-storage-design.md` the data
@@ -2190,26 +2247,32 @@ now says the limit is on language, not on when to start.
     level with `origin/main`. This is the first release here that needed no second
     commit — v0.3.0's tag moved once and v0.3.1's named a fix, both because the
     tag went before the runner had spoken.
-14. **v0.5.1 is built and unreleased, and two things come after it.** The build
-    is `memory export` and it is described at the top of this file. What follows,
-    in the order the audit recommends rather than the order the recorded plan had:
-    - **`memory import`** — the second half of portability, and where the whole
-      cost of the feature is. It inherits a closed list from the freeze's §5 and
-      an unmet criterion from its §6: **the reader half of the count guard**, which
-      no command can hold until something reads a file. `docs/v0.5.1-portability-design.md`
-      §5 is the five constraints it must satisfy, and the four questions it must
-      decide are named there: merge, replace or refuse; an id that already exists
-      with different content; whether an import may narrow the set; and whether it
-      is available when the store already holds another repository's memories.
-    - **The understanding pilot** (`docs/v0.5-product-audit.md` §4), which gates
-      the *sharing* half of the question and cannot be run by an agent: it needs
-      six to eight people who did not write the tool. Its Memory sub-experiment is
-      the one that decides whether carrying knowledge between people is worth
-      anything, and its falsification condition is stated in advance — **if it
+14. **v0.5.1 is released, and three things come after it.** The release is
+    `memory export` and it is described at the top of this file; the tag is at
+    `1a14370`. What follows, in the order the audit recommends rather than the
+    order the recorded plan had:
+    - **The minimal `memory import`** — and the *reason* it is not gated by the
+      pilot is the correction above: an export that cannot be imported is not a
+      backup, so the data-protection half of portability is only half delivered.
+      Scoped to **this repository into a store that holds nothing for it**, and
+      refusing a file made about another repository, it needs no conflict rules,
+      no identity rewrite and no fork preview — and it closes the one acceptance
+      criterion `docs/v0.5.1-portability-design.md` §6 records as unmet, **the
+      reader half of the count guard**, which no command can hold until something
+      reads a file. §5 of that freeze is the closed list of constraints it
+      inherits.
+    - **The understanding pilot** (`docs/v0.5-understanding-experiment.md`), which
+      gates the *sharing* half — full import, forks, merges — and the AI question,
+      and which cannot be run by an agent: it needs six to eight people who did not
+      write the tool. It also needs **four more questions** derived (the six-question
+      set wants two of each calibration level; two are written and the procedure is
+      demonstrated). Its falsification condition is stated in advance — **if it
       shows no difference, the sharing half is not worth building**, and the file
       already written is a backup format and nothing more.
-    - **The release**, which is the user's to call: CI green on the commit, then
-      the annotated tag, then the GitHub Release, in that order.
+    - **The two small real items** the audit sequenced after portability: a macOS
+      CI job (`cache.py`'s `darwin` branch has never executed on a runner) and the
+      `--db` cross-repository semantics question, which must be answered **before**
+      a full import is designed because import is what makes that state common.
 
 ## How to verify
 
