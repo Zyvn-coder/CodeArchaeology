@@ -5,9 +5,16 @@ fills it with the structure of every Python file version in that history;
 ``timeline``, ``hotspots``, ``files``, ``file``, ``commit``, ``structure`` and
 ``cochange`` read it back; and ``explain`` reads it back through a model, when
 one is configured.
+
+Seven more hang off ``memory`` — ``create``, ``list``, ``show``, ``supersede``,
+``invalidate``, ``adopt`` and ``export`` — and they are the one part of the tool
+that is not derived from the repository. ``export`` is the only command that
+writes a file a person named, and the only one that could replace something the
+tool did not write, which is why it refuses an existing path unless told to.
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -55,7 +62,13 @@ from codearchaeology.memory import (
     foreign_memories,
     invalidate as invalidate_memory,
     read_memories,
+    repository_identity,
     supersede as supersede_memory,
+)
+from codearchaeology.memory_export import (
+    MemoryExportError,
+    build_document as build_export_document,
+    write_document as write_export_document,
 )
 from codearchaeology.memory_checks import (
     Evidence,
@@ -1222,6 +1235,103 @@ def adopt(
     typer.echo(f"From        {Path(from_path).resolve()}")
     typer.echo(f"To          {repository_root}")
     typer.echo(f"Database    {database}")
+
+
+@memory_app.command()
+def export(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the file here instead of to standard output.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Replace the file when it already exists."
+    ),
+) -> None:
+    """Write this project's memories to a file a person can carry.
+
+    **The file is a copy, not a second copy of record.** Editing it changes
+    nothing until something imports it, and every other command reads the
+    database. It carries what the store holds and none of what the store works
+    out — no resolution, no commit date, no reverse lifecycle link — so writing
+    it reads no evidence at all: it cannot be misled by a stale analysis, and it
+    is what a person can still reach for when the analysis is what is broken.
+
+    With no ``--output`` the document goes to standard output, so it composes
+    with a redirect of your own. With ``--output`` it is written and the block
+    says what was written. **An existing file is refused** unless ``--force`` is
+    given: this tool does not overwrite a file it did not write, and it never
+    prompts.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        with open_analysis(repository_root, database) as connection:
+            memories = read_memories(connection, repository_root, include_ended=True)
+            foreign = foreign_memories(connection, repository_root)
+    except (GitError, AnalysisError, MemoryStoreError, MemoryNotFound) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    # The identity, not the argument: the header has to name the repository the
+    # rows name, and a file that disagreed with itself about that would be the
+    # mixing the memory layer exists to prevent.
+    repository = repository_identity(repository_root)
+    document = build_export_document(
+        memories, repository=repository, exported_at=datetime.now().astimezone()
+    )
+
+    count, paths = foreign
+    if count:
+        # The same note `memory list` gives, and for the same reason: a file is
+        # about one repository, so the others are reported rather than included
+        # in silence. On stderr, so that a redirected export stays the document.
+        typer.echo(
+            f"Note: this database also holds memories made about"
+            f" {', '.join(paths)} ({_memory_count(count)}), and they are not"
+            f" in this file",
+            err=True,
+        )
+
+    if output is None:
+        _write_export_to_stdout(document)
+        return
+
+    target = output.resolve()
+    try:
+        write_export_document(document, target, replace=force)
+    except MemoryExportError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Wrote       {_memory_count(len(memories))}")
+    typer.echo(f"To          {target}")
+    typer.echo(f"Repository  {repository}")
+    typer.echo(f"Database    {database}")
+
+
+def _write_export_to_stdout(document: str) -> None:
+    """The document and nothing else, with the line endings the format froze.
+
+    Written as bytes when standard output is not a terminal, because a Windows
+    pipe is exactly where ``\\n`` becomes ``\\r\\n``, and this file's bytes are
+    part of its contract: two exports of one store have to be comparable with a
+    diff, and a diff of a file that changed endings between machines is noise.
+
+    A terminal is left to :func:`typer.echo`, for the reason
+    ``_speak_utf8_outside_a_terminal`` gives — Python's console layer is already
+    UTF-8, and how a console draws a line ending is the console's business and
+    not the format's. A stream with no buffer, which is what a test double is,
+    takes the same path.
+    """
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None or sys.stdout.isatty():
+        typer.echo(document, nl=False)
+        return
+    buffer.write(document.encode("utf-8"))
+    buffer.flush()
 
 
 def _foreign_memory_note(repository_root, database) -> str | None:

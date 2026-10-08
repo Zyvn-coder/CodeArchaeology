@@ -4,15 +4,20 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.5.0 is feature-complete — the tree says 0.5.0 and the release is
-> the next step.** Sixteen commands work today: the ten of v0.4 — through
-> `explain`, the only one that talks to a model — plus the six memory acts
-> (`memory create`, `list`, `show`, `supersede`, `invalidate` and `adopt`), which
-> keep what people know about the project beside the evidence and never treat it
-> as evidence. **The evidence rows can be rebuilt from git; the memory rows
-> cannot** — that exception is the one thing v0.5 changes about the database, and
-> it is stated in *Where the database lives* below. The evidence layer of v0.3.x
-> is frozen, and what it is and is not is written down in
+> **Status: v0.5.1 is feature-complete — the tree says 0.5.1 and the release is
+> the next step.** Seventeen commands work today: the ten of v0.4 — through
+> `explain`, the only one that talks to a model — plus seven memory acts
+> (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt` and
+> `export`), which keep what people know about the project beside the evidence and
+> never treat it as evidence. **The evidence rows can be rebuilt from git; the
+> memory rows cannot** — that exception is the one thing v0.5 changes about the
+> database, and it is stated in *Where the database lives* below. v0.5.1 adds the
+> first half of memory portability — a memory can be written to a file you place —
+> and the format is frozen so that an import can be designed on top of it in
+> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md); the
+> audit that argued for it is
+> [`docs/v0.5-product-audit.md`](docs/v0.5-product-audit.md). The evidence layer of
+> v0.3.x is frozen, and what it is and is not is written down in
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md); what v0.4 adds and what
 > holds it in place is [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md);
 > what v0.5 is, and what holds it, is
@@ -56,7 +61,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.0
+archaeology 0.5.1
 ```
 
 ## Usage
@@ -1213,6 +1218,91 @@ a question this version answers by refusing rather than by guessing.
 that finishes the job. Nothing is ever destroyed by the tool: only deleting the
 file does that.
 
+### Take the memories out
+
+Everything up to here keeps memories in one place: the database, named after a
+digest of the repository's path, inside a cache directory. A backup that copies
+the checkout does not copy that file, and a checkout at a new path looks for a
+different one — so `memory export` writes the memories to a text file you place
+yourself, and they travel with whatever you do with it.
+
+```console
+$ archaeology memory export ~/projects/sample-project --output memories.jsonl
+Wrote       3 memories
+To          /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+Without `--output` the document goes to standard output instead, so it composes
+with a redirect of your own:
+
+```bash
+archaeology memory export ~/projects/sample-project > memories.jsonl
+```
+
+**The file is JSON Lines**, and its first line is the header:
+
+```text
+{"memory_export_version": "1", "repository": "/home/you/projects/sample-project", "count": 3, "exported_at": "2026-10-08T09:00:00+08:00"}
+```
+
+`memory_export_version` is what a reader checks by, `repository` is what an
+import would name, `count` is how many memory lines follow, and `exported_at` is
+for you. Then **one memory per line, ascending by `memory_id`** — a total order,
+which admission order cannot give, because two memories can share a timestamp:
+
+```text
+one memory
+├── memory_id        the UUID, whole: it is what the file is sorted by
+├── repository       the same path as the header, on every row
+├── statement        the person's words, whole, on one line whatever is in them
+├── author           {"name", "email"}, or null when the tool could not tell
+├── admitted_at      when the act happened
+├── state            active | superseded | invalidated
+├── subject          {"kind", "path"?, "qualname"?, "commit"?}
+├── since            {"commit"} or {"date"} or null — null is unknown
+├── ended_at         null while the memory is active
+├── end_reason       the reason an invalidated memory ended
+├── superseded_by    the id of the successor, or null
+└── citations        [{"kind", "ref"}], in the order they were given
+```
+
+**Four fields a memory shows elsewhere are deliberately not in the file**, and
+each is missing for its own reason. The resolution of a subject and the
+resolution of a citation are answers the evidence layer works out against *this*
+repository's history — in another repository they would be answers to a
+different question, which is worse than no answer. The date of the commit a
+memory starts from is read out of the stored commits, and the repository the
+file arrives in re-reads it or cannot. And the reverse of a supersede is absent
+because the store keeps one direction so that two rows cannot disagree about it,
+and a file is storage.
+
+The consequence is worth more than the omissions: **writing an export reads no
+evidence at all.** It cannot be misled by an analysis that is behind, it checks
+no citation, and it is what you can still reach for when the evidence is the
+thing that broke.
+
+**An existing file is refused** unless you pass `--force`:
+
+```text
+Error: /home/you/projects/sample-project/memories.jsonl exists; this command
+does not replace a file it did not write. Give another path, or pass --force to
+replace it
+```
+
+Nothing in this tool ever prompts — a question would break every script that
+uses it — so the safety is a flag and a sentence, the same way `adopt`'s safety
+is the path you have to type in full.
+
+**Two exports of an unchanged store are identical but for `exported_at`.** The
+rows are byte-for-byte the same, because the order is a function of the set and
+no field in a row is derived — so a `diff` between two exports shows what
+changed about the memories and nothing else.
+
+**The file is a copy, not a second copy of record.** Editing it changes nothing
+until something imports it, and every other command reads the database.
+
 ### What `explain` does with them
 
 `explain` reads one commit, and the memories related to it are shown beside the
@@ -1460,13 +1550,17 @@ command or the whole call, fastest of three. A memory costs about 380 bytes.
   0.1ms, and the whole-store read from 748ms to 340ms.
 - **`--json` is linear by contract.** A program that asked for the list asked for
   all of it, so a hundred thousand memories cost 4.74s and a document of tens of
-  megabytes. Subject filtering is the fix and it is the first thing queued after
-  v0.5.0.
+  megabytes. Subject filtering is the fix, and the audit that followed v0.5.0
+  **reversed its priority**: it is not queued behind nothing, because the scale
+  that hurts is a scale only an import creates — at a thousand memories this is
+  76.6ms. `docs/v0.5-product-audit.md` §8 has the reasoning and the numbers.
 - **`explain` pays for the whole store once.** Selecting the memories related to
   a commit reads every memory of the repository and filters it in Python, because
   the six relations include a file's earlier names and a definition's name, which
   are not a query the schema can answer alone. At a hundred thousand memories
-  that is 1.11s on top of a command that already rebuilds the context.
+  that is 1.11s on top of a command that already rebuilds the context. A SQL
+  prefilter is the fix, at the same priority as the line above and for the same
+  reason: 8.2ms at a thousand.
 
 ### The structure layer, measured separately
 
@@ -1543,6 +1637,7 @@ src/codearchaeology/
     memory_checks.py  a subject and a citation, held against the evidence
     memory_view.py  the memory block, the object, and the sentence that ends it
     memory_section.py  which memories belong beside a commit, and how they are shown
+    memory_export.py  a repository's memories as a text file a person can carry
     formatting.py   small helpers shared by the two views
 tests/
     sample_repo.py  builds a small deterministic repository for the tests
@@ -1648,7 +1743,9 @@ Each release, and what it changed, is recorded in the
   be rebuilt by reading git again; a memory cannot, because it is what a person
   stated. Deleting the database file destroys the memories in it, and nothing
   else can bring them back — so copy the file before replacing it or clearing a
-  cache directory. Export and import are not here yet.
+  cache directory, or run `memory export` and keep the file it writes.
+  **Import is not here yet**: an exported file can be read and kept, and nothing
+  in this version reads one back into a database.
 - **A moved repository needs three steps, and the tool cannot shorten them.**
   The database is named after the path, so a checkout at a new path looks for a
   different file. `analyze --db <old file>`, then `memory adopt --from <old path>`

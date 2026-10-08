@@ -10,15 +10,28 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-07. v0.5.0 is released: an annotated tag at `e3c55d0`
-with a GitHub Release, made after all four CI jobs passed on that commit.** All
-twelve units are in the tree and the audit's nineteen rows are below; the first
-push of the release was red on all four jobs, and what it found was a real defect
-in three tests (trap 41) that was fixed before anything was tagged. The tree is at
-921 tests and 0.5.0 in the five places `tests/test_cli.py` compares. What is left
-is the two measured linear costs the READMEs name, with their fixes queued:
-subject filtering on `list`, and a SQL prefilter for `explain`'s section.
-`docs/v0.5-design.md` is the
+**Last updated: 2026-10-08. Phase 2 is prepared and not run.** The understanding
+experiment — the first test of the product claim rather than the tool — is
+designed in `docs/v0.5-understanding-experiment.md`, two calibrated questions
+carry their ground truth, the materials are printable, and the decision rule is
+declared before any data exists. **It needs six to eight people and cannot be run
+by an agent.** Preparing it was not free: the tool was pointed at a codebase with
+11.7 years of history for the first time (`analyze` 1.0 s, `ast` 24.8 s), two of
+the audit's reasoned claims failed measurement, and `git blame` turned out to be
+the instrument — a site is worth asking about when blame lands on a rewrite rather
+than on the decision. **v0.5.1 is built and not released:** the tree says 0.5.1 in
+the six places that are compared, and the release — CI, tag, GitHub Release — is
+the next step and the user's to call. `docs/v0.5-product-audit.md`
+is the audit: it found the value claim unverified (no user, no experiment, 0
+forks and 0 issues on a public repository), three scenarios pointing at one
+missing capability, and the fact that the v0.5 data model already paid for export
+with its UUID ids. `docs/v0.5.1-portability-design.md` is the freeze, and its §8
+carries six amendments the building made to it. The tree is at 946 tests. **v0.5.0
+is released: an annotated tag at `e3c55d0` with a GitHub Release, made after all
+four CI jobs passed on that commit.** All twelve units are in the tree and the
+audit's nineteen rows are below; the first push of the release was red on all four
+jobs, and what it found was a real defect in three tests (trap 41) that was fixed
+before anything was tagged. `docs/v0.5-design.md` is the
 definition, `docs/v0.5-storage-design.md` the data model,
 `docs/v0.5-cli-design.md` the command line and `docs/v0.5-final-state.md` the
 record. v0.4.0 is released: tagged at `07e3da7` with a GitHub Release, after all
@@ -27,8 +40,138 @@ The two audits are below. `main` is pushed and level with
 `origin/main`. Open on purpose: `commit` has no JSON form; the three v0.4
 questions — whether an explanation is ever stored, whether the prompt gets a unit
 of its own, and how the evidence alone is read once a model is configured; and the
-v0.5 ones the final-state doc lists — export/import, the proposal route, `--json`
+v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## Phase 2: the understanding experiment, 2026-10-08
+
+**The first attempt to test the product claim rather than the tool.** The design
+is `docs/v0.5-understanding-experiment.md` — participants, crossover, the control
+and treatment, the metrics, the materials to print, and a decision rule declared
+before any data exists. **It is not run, and it cannot be run by an agent**: it
+needs six to eight people. What the session *could* do was prepare it, and
+preparing it produced five measurements that changed the design. Four of them are
+reusable, so they are here.
+
+**The tool met a codebase with real age for the first time, and it held.**
+`python-attrs/attrs`, 1,845 commits over 11.7 years, 8.4 MB: **`analyze` 1.0 s**,
+**`ast` 24.8 s** for 1,839 file versions and 88,512 definitions, 0 parse failures.
+The audit's complaint — that the tool had never been pointed at anything with a
+history — is now answered, and the answer is that it is fast enough to prepare an
+experiment in a minute. The clone and the analyzed database are on disk at
+`D:\tmp\exp\attrs` and `D:\tmp\exp\cache`.
+
+**Two of the audit's reasoned claims did not survive measurement.**
+
+- **"A definition deleted and later restored" was called the strongest trigger
+  for proposing a question.** Over 1,845 real commits it fires **four** times, and
+  three of the four are nested functions the parser reports with `<locals>` — an
+  artifact of parsing, not a decision anyone made. The trigger list was reasoned
+  from the design and never measured.
+- **A candidate question was killed by the changelog.** The `linecache` loop in
+  `_make.py` is genuinely puzzling and its reason is real — and it is also
+  `CHANGELOG.md:447`, one grep away. A question whose answer is in the tree is
+  not biased, it is **flat**: both conditions answer it and it separates nothing.
+  **The repository criteria therefore gained one: a sparse changelog.** A project
+  that records every change in a maintained document turns "why" questions into
+  greps.
+
+**The reusable one, and the reason this session was worth running: `git blame` is
+the instrument, and its failure is the selection rule.**
+
+> **A site is worth a question when `git blame` on its current lines returns a
+> commit that is not the origin of the construct** — because a later commit
+> rewrote, generalized or moved it.
+
+The worked example: `_frozen_setattrs` in `_make.py` is three decisions over five
+years — a **PyPy-only** exception-chaining fix (2020), its **generalization to
+CPython** (2023, which removed an `if PYPY:` wrapper), and the `__notes__`
+addition (2024). Blame returns the 2023 and 2024 commits and **cannot see 2020**,
+because the 2023 commit rewrote the lines. So the control's cheapest and most
+natural move produces a plausible, well-evidenced, *incomplete* answer, while
+`structure --history` lists all five moments with shas and dates. **The test costs
+one command per candidate and it replaces guessing**, which is why it is now step
+5 of the derivation procedure and the L3 test in the calibration table.
+
+**And the same finding says something the audit could only assert.** Where
+`git blame` is right, the tool adds nothing — blame has answered "which commit
+last touched this line" well for fifteen years. The tool answers a different
+question, *every* moment a definition changed across rewrites, renames and file
+moves, and the sites where the two answers differ are exactly the sites worth
+measuring. **A candidate question whose answer blame gets right is not worth
+asking.**
+
+**One constraint that only appears when you try to build it.** The Memory
+sub-experiment needs a *true* statement about a project that the tool cannot
+derive, and an outsider preparing an experiment cannot invent one — a fabricated
+memory is not knowledge and an experiment on one measures whether a made-up note
+helps. The working resolution is in §8: the knowledge comes from the project's own
+documentation (someone stated it; the tool cannot derive prose), and the test is
+**surfacing** rather than availability. The much better version needs a team and a
+repository they own, which is why it is not in this phase.
+
+**What the user has to supply, and nothing else can:** six to eight people, a
+second scorer if the author is not to be the only one, and a date. **The kit on
+disk plus the document is everything else** — four more questions have to be
+derived (the procedure is demonstrated on two), and the six-question set wants two
+of each level.
+
+## v0.5.1: the audit, the freeze and `memory export`, 2026-10-08
+
+**The user asked which of two routes to take and this session's audit answered
+"neither as written", then built the first half of the one it recommended.** The
+reasoning is in `docs/v0.5-product-audit.md` §3 and §10; what matters for whoever
+picks this up is the shape of the argument, because it will come up again.
+
+**P1 and P2 were reversed, and the measurement is the reason.** The recorded plan
+was subject filtering on `list` then a SQL prefilter for `explain`'s section.
+Both are real at a hundred thousand memories (4.74s and 1.11s) and both are
+irrelevant at the scale a person reaches by hand: at a thousand, `list --json` is
+76.6ms and the section is 8.2ms. **The only thing that makes a store large is an
+import**, so the two "known debts" follow portability rather than preceding it —
+and if portability never ships, they are never needed. This is the first time this
+project has reversed a recorded priority, and the reason it could is that the
+number was in a published table.
+
+**Export first, import second, and the split is where the risk is.** Every
+portability option costs roughly the same to *write* and wildly different amounts
+to *read back*: import needs conflict rules, an identity rewrite, and an answer
+for "the file and the store disagree". So the format is frozen now and the
+import is a unit of its own, which is also why §6's count-guard criterion is
+recorded as unmet rather than quietly dropped — it describes a reader.
+
+**Three decisions inside the format that a reader should not have to derive from
+the code:**
+
+- **A row carries what the store holds and nothing the store works out.** Four
+  fields a memory shows elsewhere are absent: the resolution of a subject, the
+  resolution of a citation, the date of the commit a memory starts from, and the
+  reverse of a supersede. Each has its own reason, and the first three share one —
+  they are the evidence layer's answers **about this repository**, so in another
+  repository they would be answers to a different question. The fourth is the
+  store's own rule: one direction, so two rows cannot disagree, and a file is
+  storage.
+- **The consequence was worth more than the omissions.** Because those four are
+  exactly the fields that need the evidence tables, **export reads no evidence at
+  all.** It cannot be misled by a stale analysis, it checks no citation, and it is
+  what a person can still reach for when the evidence is the thing that broke.
+  `tests/test_memory_export.py` holds that **with a control** — the wipe has to
+  change what `memory list --json` resolves, or the test fails — because a test
+  that empties a table nothing reads would pass while proving nothing.
+- **An existing output file is refused unless `--force`.** This is the first
+  command in the tool that can destroy something it did not write: `analyze` and
+  `ast` write the database (and create its parent directory), and no command ever
+  *replaces* a file. There is no precedent and no prompt anywhere in this tool, so
+  the safety is a flag and a sentence.
+
+**Two traps, both found by running rather than by thinking, and both about the
+README checker — this is trap 42's family, so they are numbered below.**
+
+Also worth knowing: **the boundary suite found the new module before any human
+did.** `test_the_evidence_layer_never_reads_memory` scans every module for an
+import of the memory side, and `memory_export.py` was not on `MEMORY_SIDE`; the
+fix is one line and the failure is the guard working exactly as designed on the
+first module added since it was written.
 
 ## v0.5 Unit 1: the Developer Memory design freeze, 2026-10-06
 
@@ -742,6 +885,17 @@ Two things the audit is worth keeping for, beyond the twelve rows:
 
 ## Where the project stands
 
+**v0.5.1 is built and unreleased.** It is the first half of memory portability:
+`docs/v0.5-product-audit.md` is the audit that decided the route — it separated
+the *data-protection* half of the question, which does not depend on whether the
+tool helps anyone understand code, from the *sharing* half, which does —
+`docs/v0.5.1-portability-design.md` is the format freeze, `memory_export.py` and
+the `memory export` command are the build, `tests/test_memory_export.py` is its
+twenty-three tests, and §8 of the freeze carries six amendments the building made
+to it. The tree is at 946 tests and the version is 0.5.1 in the six places
+`tests/test_cli.py` and the CHANGELOG compare. **The release is the next step and
+the user's to call.** `memory import` is deliberately not here.
+
 **v0.5 is complete in the tree.** Eleven units: three design freezes
 (`docs/v0.5-design.md` the definition, `docs/v0.5-storage-design.md` the data
 model, `docs/v0.5-cli-design.md` the command line), the store
@@ -757,7 +911,8 @@ the documentation and contract unit that produced
 first push was red on all four jobs before the fix that made them green. v0.5.0 is
 released: annotated tag `v0.5.0` at `e3c55d0` with a GitHub Release. What remains
 is the known debt with its fixes named: `memory list --json` and `explain`'s
-section are both linear in the store's size.
+section are both linear in the store's size — **and the audit reversed their
+priority**, because the store only gets large if something imports into it.
 
 **v0.4 has begun, in documents.** Fourteen units are written: `docs/v0.4-problem-definition.md`
 fixes the question — one commit, what happened and which candidate reasons the
@@ -1861,6 +2016,34 @@ now says the limit is on language, not on when to start.
     and only the runner can see it — which is why the release order runs CI
     before the tag and not after it.
 
+42. **A README block whose lines are ordered by a generated value cannot be
+    written down.** The plan for `memory export`'s documentation was to replay
+    the standard-output form, which is the honest default. It cannot be: the file
+    is ordered ascending by `memory_id`, and a memory id is generated when the
+    memory is admitted — so *which* memory appears on which line changes every
+    session, and no block can fix it. The checker already handles this for a
+    single value (the ids are put back by shape, `DOCUMENTED_CREATED_ID`), but a
+    substitution cannot help when the *order* is the thing that varies. The
+    replayed block is therefore the `--output` summary — four short deterministic
+    lines — and the format itself is shown as a tree in a block that is not
+    replayed. **The general rule**: a block is replayable only if its text is a
+    function of the fixture, and a total order over generated values is not.
+
+43. **A replayable block writes a file, and copying the database back does not
+    undo that.** `Scenario.restore()` puts the database back before every block,
+    which was enough while every command wrote only there. `memory export
+    --output` writes a file into the checkout, and *both* READMEs carry the same
+    block — so the second one met what the first one had written and was shown
+    the refusal instead of what its own text says. `restore()` now removes it.
+    **The related half, found in the same run**: a path the tool prints by
+    joining the repository to a name carries the machine's separator, so the
+    documented `/home/you/projects/sample-project/memories.jsonl` came out with a
+    backslash on Windows and no block could be right on both platforms. The
+    normaliser now collapses that join, after the path substitutions rather than
+    before — the join only becomes visible once the repository half has become
+    the documented one. Both are trap 35's family again: the block and the runner
+    disagree about something the tool does not control.
+
 ## Environment notes
 
 - **Pushing works over SSH on port 443**, through a repository deploy key and the
@@ -2007,6 +2190,26 @@ now says the limit is on language, not on when to start.
     level with `origin/main`. This is the first release here that needed no second
     commit — v0.3.0's tag moved once and v0.3.1's named a fix, both because the
     tag went before the runner had spoken.
+14. **v0.5.1 is built and unreleased, and two things come after it.** The build
+    is `memory export` and it is described at the top of this file. What follows,
+    in the order the audit recommends rather than the order the recorded plan had:
+    - **`memory import`** — the second half of portability, and where the whole
+      cost of the feature is. It inherits a closed list from the freeze's §5 and
+      an unmet criterion from its §6: **the reader half of the count guard**, which
+      no command can hold until something reads a file. `docs/v0.5.1-portability-design.md`
+      §5 is the five constraints it must satisfy, and the four questions it must
+      decide are named there: merge, replace or refuse; an id that already exists
+      with different content; whether an import may narrow the set; and whether it
+      is available when the store already holds another repository's memories.
+    - **The understanding pilot** (`docs/v0.5-product-audit.md` §4), which gates
+      the *sharing* half of the question and cannot be run by an agent: it needs
+      six to eight people who did not write the tool. Its Memory sub-experiment is
+      the one that decides whether carrying knowledge between people is worth
+      anything, and its falsification condition is stated in advance — **if it
+      shows no difference, the sharing half is not worth building**, and the file
+      already written is a backup format and nothing more.
+    - **The release**, which is the user's to call: CI green on the commit, then
+      the annotated tag, then the GitHub Release, in that order.
 
 ## How to verify
 

@@ -54,6 +54,7 @@ MEMORY_SIDE = (
     "cli.py",
     "memory.py",
     "memory_checks.py",
+    "memory_export.py",
     "memory_section.py",
     "memory_view.py",
 )

@@ -195,7 +195,7 @@ def memory_object(shown: Shown) -> dict:
         "memory_id": memory.memory_id,
         "repository": memory.repository_path,
         "statement": memory.statement,
-        "author": _author_object(memory),
+        "author": author_object(memory),
         "admitted_at": memory.admitted_at.isoformat(),
         "state": memory.state,
         "subject": _subject_object(memory.subject, shown.subject_resolution),
@@ -332,10 +332,44 @@ def _lifecycle_line(memory: Memory, successor: Memory | None) -> str:
     return "; ".join(parts) if parts else "nothing supersedes it"
 
 
-def _author_object(memory: Memory) -> dict | None:
+def author_object(memory: Memory) -> dict | None:
+    """Who stated it, or ``None`` when the tool could not tell.
+
+    Public, with :func:`subject_object` and :func:`since_object` below, for one
+    reason: the export file carries the same fields as this object, and the one
+    thing that must not happen is two modules each deciding what a memory's
+    fields are. Export imports these instead of restating them, so a field added
+    here cannot go missing there — and the fields it must *not* have are added
+    by the three private helpers below rather than being dropped there.
+    """
     if memory.author_name is None and memory.author_email is None:
         return None
     return {"name": memory.author_name, "email": memory.author_email}
+
+
+def subject_object(subject: Subject) -> dict:
+    """What a memory is about, and nothing about whether it still resolves."""
+    if subject.kind == "definition":
+        return {"kind": "definition", "path": subject.path, "qualname": subject.qualname}
+    if subject.kind == "commit":
+        return {"kind": "commit", "commit": subject.commit_sha}
+    if subject.kind == "path":
+        return {"kind": "path", "path": subject.path}
+    return {"kind": "repository"}
+
+
+def since_object(memory: Memory) -> dict | None:
+    """When the author said the statement started holding, or ``None``.
+
+    ``None`` is unknown and never "from the beginning". The cited commit's own
+    date is not here: it is read out of the stored commits, so it belongs beside
+    the rendering that compares times and not in a file that leaves the machine.
+    """
+    if memory.since_commit_sha:
+        return {"commit": memory.since_commit_sha}
+    if memory.since_date:
+        return {"date": memory.since_date}
+    return None
 
 
 def _subject_line(shown: Shown) -> str:
@@ -353,14 +387,12 @@ def _subject_line(shown: Shown) -> str:
 
 
 def _subject_object(subject: Subject, resolution: str) -> dict:
-    if subject.kind == "definition":
-        found = {"kind": "definition", "path": subject.path, "qualname": subject.qualname}
-    elif subject.kind == "commit":
-        found = {"kind": "commit", "commit": subject.commit_sha}
-    elif subject.kind == "path":
-        found = {"kind": "path", "path": subject.path}
-    else:
-        found = {"kind": "repository"}
+    """The subject with the answer to "does this still point at something".
+
+    The base is :func:`subject_object`'s, so the two cannot disagree about what
+    a subject is; what this adds is the one field the evidence layer answers.
+    """
+    found = subject_object(subject)
     found["resolution"] = resolution
     return found
 
@@ -371,12 +403,10 @@ def _since_object(shown: Shown) -> dict | None:
     A commit carries its own recorded date beside it, because the temporal rule
     compares by time and a reader should be able to see what was compared.
     """
-    memory = shown.memory
-    if memory.since_commit_sha:
-        return {"commit": memory.since_commit_sha, "commit_date": shown.since_date}
-    if memory.since_date:
-        return {"date": memory.since_date}
-    return None
+    found = since_object(shown.memory)
+    if found is not None and "commit" in found:
+        found["commit_date"] = shown.since_date
+    return found
 
 
 def _resolution(state: str) -> str:

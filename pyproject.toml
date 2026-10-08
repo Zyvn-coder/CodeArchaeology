@@ -1,6 +1,6 @@
 [project]
 name = "codearchaeology"
-version = "0.5.0"
+version = "0.5.1"
 description = "A time machine for understanding how code evolves."
 readme = "README.md"
 requires-python = ">=3.11"

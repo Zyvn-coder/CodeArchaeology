@@ -105,6 +105,12 @@ OLD_ARGUMENT = "~/old/sample-project"
 DOCUMENTED_OLD_REPOSITORY = "/home/you/old/sample-project"
 DOCUMENTED_DATABASE = "/home/you/.cache/codearchaeology/82d48b376e387fde.db"
 
+# The file the `memory export` block writes into the checkout. Copying the
+# database back is not enough for it: a file is not a database, and both READMEs
+# carry the same block, so the second one would meet what the first one wrote and
+# be shown a refusal instead of what its own text says.
+DOCUMENTED_EXPORT_FILE = "memories.jsonl"
+
 BLOCK = re.compile(r"```console\n(.*?)```", re.S)
 COMMAND = re.compile(r"^\$ (archaeology [^\n]*)$", re.M)
 
@@ -180,6 +186,9 @@ class Scenario:
         other, which is the whole point of the separation demo.
         """
         shutil.copy(self.pristine, self.database)
+        exported = self.repository / DOCUMENTED_EXPORT_FILE
+        if exported.is_file():
+            exported.unlink()
 
     def _real(self, argument: str, back: dict) -> str:
         """One documented argument put back to the value this fixture has.
@@ -579,6 +588,12 @@ def _normalise(text: str, scenario: Scenario) -> list[str]:
         for form in (scenario.foreign, scenario.foreign.replace("\\", "/")):
             text = text.replace(form, DOCUMENTED_OLD_REPOSITORY)
             text = text.replace(_escaped(form), DOCUMENTED_OLD_REPOSITORY)
+
+    # A path the tool prints by joining the repository to a name — the file an
+    # export wrote — carries the machine's separator, and the documented path
+    # has none. Normalised after the substitutions, because the join is only
+    # visible once the repository half has become the documented one.
+    text = text.replace(f"{DOCUMENTED_REPOSITORY}\\", f"{DOCUMENTED_REPOSITORY}/")
 
     # The memory ids, by value for the ones the fixture made and by shape for
     # the one a block creates — that id does not exist until the command runs.

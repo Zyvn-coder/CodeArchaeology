@@ -8,6 +8,67 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.5.1] - 2026-10-08
+
+The first half of memory portability: a memory can be written to a file a person
+places. The freeze is `docs/v0.5.1-portability-design.md`, and the audit that
+argued for it is `docs/v0.5-product-audit.md` — three scenarios (a newcomer
+arriving, a checkout being backed up, a repository being moved) that all ended in
+the same place, a memory that exists in exactly one file and cannot get out.
+
+**`memory import` is not here.** The format is frozen first so that an import can
+be designed on top of it, which is also where the whole cost of the feature is:
+export is a query and a serialisation, and import is where the conflict rules go.
+
+### Added
+
+- **`archaeology memory export`** — the seventeenth command, and the first in
+  this tool that writes a file a person named. JSON Lines: a header line, then
+  one memory per line, ascending by `memory_id`, UTF-8 with `\n` endings on every
+  platform and no BOM. With no `--output` the document goes to standard output, so
+  it composes with a redirect of your own; with `--output` the file is written and
+  the block says what was written, where, about which repository, and from which
+  database. **An existing file is refused** unless `--force` is given: this is the
+  first command that could destroy something the tool did not write, nothing here
+  ever prompts, so the safety is a flag and a sentence.
+- **The format carries what the store holds and nothing the store works out.**
+  Four fields a memory shows elsewhere are deliberately absent, each for its own
+  reason: the resolution of a subject and the resolution of a citation (answers
+  the evidence layer works out against *this* repository, so in another one they
+  would be answers to a different question), the date of the commit a memory
+  starts from (read out of the stored commits), and the reverse of a supersede
+  (the store keeps one direction so two rows cannot disagree, and a file is
+  storage). The consequence is the property worth having: **writing an export
+  reads no evidence at all**, so it cannot be misled by an analysis that is
+  behind, and it is what a person can still reach for when the evidence is the
+  thing that broke.
+- **`tests/test_memory_export.py`** — twenty-three tests, three of which are the
+  format's own claims: the row's key set against `memory show --json`'s object
+  field by field; the bytes read as **bytes**, because a decoded string is exactly
+  where a CRLF stops being visible; and the evidence-indifference held with a
+  control, so the test fails if the wipe did nothing rather than passing because
+  nothing was wiped.
+
+### Changed
+
+- **The object builders in `memory_view` are public** — `author_object`,
+  `subject_object`, `since_object` — and the export composes them rather than
+  restating what a memory's fields are, so a field added to the object cannot go
+  missing from a file. The rendering is byte-identical, which the memory and
+  contract tests hold.
+- **`memory.repository_identity`** is the public name of what was `_resolved`.
+  The export's header has to name the repository the rows name, byte for byte,
+  and one expression in one place is what keeps the two from drifting.
+
+### Fixed
+
+- **The README checker normalises the separator a documented path is joined
+  with.** A path the tool prints by joining the repository to a name — the file an
+  export wrote — carries the machine's separator, so a block written with `/`
+  failed on Windows and a block written with `\` would have failed on Linux. The
+  normalisation runs after the path substitutions, because the join only becomes
+  visible once the repository half has become the documented one.
+
 ## [0.5.0] - 2026-10-07
 
 The v0.5 Developer Memory layer: what people know about the project, kept beside

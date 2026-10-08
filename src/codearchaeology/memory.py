@@ -423,8 +423,8 @@ def adopt(connection: sqlite3.Connection, *, from_path, to_path) -> int:
     # Not ``_writable_repository``: that refuses a database holding another
     # repository's memories, and this act exists precisely to repair that state.
     prepare_memory(connection)
-    source = _resolved(from_path)
-    destination = _resolved(to_path)
+    source = repository_identity(from_path)
+    destination = repository_identity(to_path)
 
     if source == destination:
         raise MemoryStoreError(
@@ -551,7 +551,7 @@ def _selection(repository_path, include_ended: bool) -> tuple[str, tuple]:
     hundred it read from.
     """
     where = "repository_path = ?"
-    parameters: tuple = (_resolved(repository_path),)
+    parameters: tuple = (repository_identity(repository_path),)
     if not include_ended:
         where += " AND state = ?"
         parameters += (ACTIVE,)
@@ -574,7 +574,7 @@ def foreign_memories(
         "SELECT repository_path, COUNT(*) AS held FROM memories"
         " WHERE repository_path <> ? GROUP BY repository_path"
         " ORDER BY repository_path",
-        (_resolved(repository_path),),
+        (repository_identity(repository_path),),
     ).fetchall()
     return (sum(row["held"] for row in rows), tuple(row["repository_path"] for row in rows))
 
@@ -830,7 +830,7 @@ def _writable_repository(connection: sqlite3.Connection, repository_path) -> str
     and every later read would have to filter it.
     """
     prepare_memory(connection)
-    repository = _resolved(repository_path)
+    repository = repository_identity(repository_path)
     held, paths = foreign_memories(connection, repository)
     if held:
         raise MemoryStoreError(
@@ -998,8 +998,15 @@ def _count(connection: sqlite3.Connection, where: str, parameters: tuple) -> int
     ).fetchone()["held"]
 
 
-def _resolved(path) -> str:
-    """The repository identity, as the evidence side writes and compares it."""
+def repository_identity(path) -> str:
+    """The repository identity, as the evidence side writes and compares it.
+
+    Public because two things outside this module need the *same* string: the
+    export file names the repository it is about, and that name has to be the
+    one on the rows, byte for byte, or a file could disagree with itself. One
+    expression, one home — the alternative is a second copy of ``resolve()``
+    somewhere else, which is how the two drift.
+    """
     return str(Path(path).resolve())
 
 

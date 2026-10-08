@@ -4,12 +4,16 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.5.0 功能已完整——代码树里写的就是 0.5.0，下一步是发布。** 现在有十六个
+> **状态：v0.5.1 功能已完整——代码树里写的就是 0.5.1，下一步是发布。** 现在有十七个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
-> 的六个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`）——它们把
-> 人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git 重建，
-> memory 行不能**——这是 v0.5 对数据库唯一的一处改动，写在下面的"数据库放在哪"一节里。
-> v0.3.x 的证据层已冻结，它是什么、不是什么写在
+> 的七个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`）
+> ——它们把人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git
+> 重建，memory 行不能**——这是 v0.5 对数据库唯一的一处改动，写在下面的"数据库放在哪"一节里。
+> v0.5.1 加的是 memory 可携带性的一半——memory 可以写成一个由你放置的文件——格式已经冻结，
+> 好让 import 能在它之上设计，写在
+> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md)；主张要做这件事的
+> 审计是 [`docs/v0.5-product-audit.md`](docs/v0.5-product-audit.md)。v0.3.x 的证据层已冻结，
+> 它是什么、不是什么写在
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里；v0.4 加了什么、由什么守住，
 > 写在 [`docs/v0.4-final-state.md`](docs/v0.4-final-state.md) 里；v0.5 是什么、由什么守住，
 > 写在 [`docs/v0.5-final-state.md`](docs/v0.5-final-state.md) 里，memory 这一层的定义在
@@ -49,7 +53,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.0
+archaeology 0.5.1
 ```
 
 ## 用法
@@ -1093,6 +1097,79 @@ Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
 `analyze` 在即将把 memory 留在视野之外时会说明——共享 `--db` 或一次搬家造成的那一刻——
 报出数量、路径，以及补完这件事的动作。工具永远不会销毁任何东西：只有删掉文件才会。
 
+### 把 memory 取出来
+
+到这儿为止，memory 只存在一个地方：缓存目录里那个以仓库路径摘要命名的数据库文件。备份检出
+目录不会备份到它，换一个路径的检出又会去找另一个文件——所以 `memory export` 把 memory 写成
+一个由你自己放置的文本文件，它们跟着你把它放到哪里。
+
+```console
+$ archaeology memory export ~/projects/sample-project --output memories.jsonl
+Wrote       3 memories
+To          /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+不给 `--output` 时，整个文档写到标准输出，所以可以用你自己的重定向接上：
+
+```bash
+archaeology memory export ~/projects/sample-project > memories.jsonl
+```
+
+**文件是 JSON Lines 格式**，第一行是头部：
+
+```text
+{"memory_export_version": "1", "repository": "/home/you/projects/sample-project", "count": 3, "exported_at": "2026-10-08T09:00:00+08:00"}
+```
+
+`memory_export_version` 是读取方校验的版本，`repository` 是将来 import 要指认的路径，`count`
+是后面跟着多少行 memory，`exported_at` 是给你看的。之后**一行一条 memory，按 `memory_id`
+升序**——这是一个全序，而写入顺序给不了全序，因为两条 memory 可能共享同一个时间戳：
+
+```text
+一条 memory
+├── memory_id        完整 UUID：文件就是按它排序的
+├── repository       和头部同一个路径，每一行都有
+├── statement        本人原话，完整；里面无论有什么，都落在一行里
+├── author           {"name", "email"}；工具判断不出来时是 null
+├── admitted_at      这个动作发生的时间
+├── state            active | superseded | invalidated
+├── subject          {"kind", "path"?, "qualname"?, "commit"?}
+├── since            {"commit"} 或 {"date"} 或 null —— null 表示不知道
+├── ended_at         memory 还是 active 时为 null
+├── end_reason       被 invalidate 时结束的理由
+├── superseded_by    接替者的 id，或者 null
+└── citations        [{"kind", "ref"}]，按写入时的顺序
+```
+
+**有四个字段在别处会显示、但刻意不进文件**，每一个都有各自的理由。subject 的解析结果和
+citation 的解析结果，都是证据层针对**这个**仓库的历史算出来的答案——换到另一个仓库，它们就是
+另一个问题的答案，那比没有答案更糟。memory 起点那个提交的日期，是从已存的 commits 里读出
+来的，收到文件的那个仓库会重新读一遍，或者读不到。而 supersede 的反向链接不在文件里，是因为
+存储只保留一个方向，好让两行没有机会互相矛盾——而文件也是一种存储。
+
+这个取舍带来的东西比省掉的更多：**写导出完全不读证据层。** 它不会被过期的分析误导，不检查
+任何 citation，而且在坏掉的恰好是证据的时候，它仍然是你拿得到的东西。
+
+**目标文件已存在就拒绝**，除非加 `--force`：
+
+```text
+Error: /home/you/projects/sample-project/memories.jsonl exists; this command
+does not replace a file it did not write. Give another path, or pass --force to
+replace it
+```
+
+这个工具在任何地方都不做交互式询问——一个问题就会破坏所有用它写的脚本——所以安全性是一个
+标志位加一句话，就像 `adopt` 的安全性是你必须完整敲出来的那个路径。
+
+**同一个 store 导出两次，除了 `exported_at` 之外完全一致。** 每一行逐字节相同，因为顺序是集合
+的函数、而且行里没有任何字段是推导出来的——所以两次导出之间的 `diff` 只显示 memory 变了什么，
+别的什么都不显示。
+
+**这个文件是一份拷贝，不是第二个记录源。** 编辑它不会有任何影响，直到有东西 import 它；其余
+所有命令读的都是数据库。
+
 ### `explain` 会拿这些 memory 做什么
 
 `explain` 读的是一个提交，和它相关的 memory 会出现在证据**旁边**——同一个输出里、有自己的
@@ -1307,10 +1384,13 @@ $ uv run python benchmarks/memory_benchmark.py --sizes 10 100 1000 10000 100000
   （citation、反向的生命周期链接）按"真正读到的那些 id"去取，而不是重新扫一遍整个库。
   十万条时，切片读取从 495ms 降到 0.1ms，整库读取从 748ms 降到 340ms。
 - **`--json` 按约定就是线性的。** 一个要列表的程序要的是全部，所以十万条 memory 是 4.74s、
-  一个几十兆的文档。修法是 subject 过滤，它排在 v0.5.0 之后的第一位。
+  一个几十兆的文档。修法是 subject 过滤，而 v0.5.0 之后的审计**把它的优先级调后了**：
+  它不是排在什么之前，因为会疼的那个量级只有 import 才造得出来——一千条时这里是 76.6ms。
+  理由和数字在 `docs/v0.5-product-audit.md` §8。
 - **`explain` 每次要为整个库付一次钱。** 选出与某个提交相关的 memory，会把这个仓库的全部
   memory 读出来在 Python 里过滤，因为六种关系里有"文件曾经的名字"和"definition 的名字"，
-  光靠 schema 查不出来。十万条时这是在一条本来就要重建上下文的命令上再加 1.11s。
+  光靠 schema 查不出来。十万条时这是在一条本来就要重建上下文的命令上再加 1.11s。修法是
+  一条 SQL 预过滤，优先级和上一条相同、理由也相同：一千条时是 8.2ms。
 
 ### 结构层，单独测量
 
@@ -1373,6 +1453,7 @@ src/codearchaeology/
     memory_checks.py  把一个 subject 和一条 citation 对着证据核一遍
     memory_view.py  memory 的文本块、JSON 对象，以及结尾那句话
     memory_section.py  哪些 memory 属于某个提交旁边，以及它们怎么展示
+    memory_export.py  把一个仓库的 memory 写成可携带的文本文件
     formatting.py   两个视图共用的小工具
 tests/
     sample_repo.py  构造一个确定性的小仓库供测试使用
@@ -1454,7 +1535,9 @@ benchmarks/
   生效是一条新的 memory。写错的陈述就用 invalidate 并说明写错了。
 - **一条 memory 只存在一个地方。** 库里其他任何东西都能靠重读 git 重建；memory 不能，
   因为它是人说过的话。删掉数据库文件就会删掉里面的 memory，别的任何东西都找不回来——
-  所以替换这个文件、或清理缓存目录之前，先把它复制一份。导出/导入还没有做。
+  所以替换这个文件、或清理缓存目录之前，先把它复制一份，或者跑一次 `memory export`
+  把写出的文件收好。**import 还没有做**：导出的文件可以读、可以保存，但这个版本里没有
+  任何东西能把它读回数据库。
 - **仓库搬家要三步，工具没法缩短它。** 数据库是按路径命名的，所以换到新路径的检出会去找
   另一个文件。回来的路是 `analyze --db <旧文件>` 再 `memory adopt --from <旧路径>`，写在
   上面的"仓库搬家的时候"一节里。自己去找旧文件，等于要猜两个路径是同一个项目，而这个工具
