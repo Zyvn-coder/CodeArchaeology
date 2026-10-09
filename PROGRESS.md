@@ -19,10 +19,11 @@ the reason is worth keeping: the two new README blocks were replayed locally on
 Windows *before* the push, which is where v0.5.0's three failures would have been
 caught. Phase 2 is prepared and not run: the understanding experiment — the first
 test of the product claim rather than the tool — is designed in
-`docs/v0.5-understanding-experiment.md`, two calibrated questions carry their
-ground truth, the materials are printable, and the decision rule is declared
-before any data exists. **It needs six to eight people and cannot be run by an
-agent.** Preparing it was not free: the tool was pointed at a codebase with 11.7
+`docs/v0.5-understanding-experiment.md`, **six calibrated questions (two at each
+level) carry their ground truth**, the materials are printable, and the decision
+rule is declared before any data exists. **It needs six to eight people and
+cannot be run by an agent — that and a date are now the whole blocker, because
+the question set is complete.** Preparing it was not free: the tool was pointed at a codebase with 11.7
 years of history for the first time (`analyze` 1.0 s, `ast` 24.8 s), two of the
 audit's reasoned claims failed measurement, and `git blame` turned out to be the
 instrument — a site is worth asking about when blame lands on a rewrite rather
@@ -99,8 +100,9 @@ is `docs/v0.5-understanding-experiment.md` — participants, crossover, the cont
 and treatment, the metrics, the materials to print, and a decision rule declared
 before any data exists. **It is not run, and it cannot be run by an agent**: it
 needs six to eight people. What the session *could* do was prepare it, and
-preparing it produced five measurements that changed the design. Four of them are
-reusable, so they are here.
+preparing it produced six measurements that changed the design. The reusable ones
+are here, and the last two — the rules that completing the question set produced —
+are at the end of this section.
 
 **The tool met a codebase with real age for the first time, and it held.**
 `python-attrs/attrs`, 1,845 commits over 11.7 years, 8.4 MB: **`analyze` 1.0 s**,
@@ -161,9 +163,45 @@ repository they own, which is why it is not in this phase.
 
 **What the user has to supply, and nothing else can:** six to eight people, a
 second scorer if the author is not to be the only one, and a date. **The kit on
-disk plus the document is everything else** — four more questions have to be
-derived (the procedure is demonstrated on two), and the six-question set wants two
-of each level.
+disk plus the document is everything else**, and the six-question set is
+complete — that was the last piece of authorship, and it is described next.
+
+**The question set was completed in the same session, and doing it produced three
+rules.** Four more questions were derived (Q-C…Q-F) with a bulk form of the blame
+test — blame every definition in a file, keep the ones whose visible lines
+exclude their origin, then apply the level tests — so the set is now **six
+questions, two at each level**, every one with its ground truth, its scoring
+forms and its **measured** calibration record. Three findings went into the
+procedure (`docs/v0.5-understanding-experiment.md` §2.6, §4.1 steps 4/5/7,
+§4.2's tie-break, §4.4 failures 5–7):
+
+- **A documented repository saturates L1.** attrs states its reasons in a
+  changelog *and* in the code, so a site can have an origin `git blame` cannot
+  reach and still be L1 — `NOTHING`'s enum, `cached_property` on slotted classes,
+  `Attribute.__setstate__`'s alias inference all died that way. Of the 30
+  definitions the scan ranked, 22 had an unreachable origin, and two of the four
+  final questions came from that list (Q-D, Q-F).
+- **The tie-break between the calibration tests is the cheapest path that
+  actually answers the question.** A grep hit that is the code's own identifier
+  (searching "lazy" and matching `_LAZY_SUBMODULES`) is not the tree stating a
+  reason. Without that rule both L2s would have been recorded as L1s, and the set
+  would have had three controls and one discriminating question.
+- **The six questions must not touch the Memory sub-experiment's island** (the
+  hash cache and `__attrs_post_init__`). A participant primed by a question about
+  that machinery carries the priming into §8, in both arms, and it would be
+  invisible in the results. The best candidate in that area was dropped for this
+  reason alone — see §5's Q-X, which was rejected twice.
+
+**And one limitation the derivation found, this one about the tool.** The
+lifecycle view follows a definition by **name inside a file**, so a rename reports
+a deletion and a creation with no link between them: `_make_repr` →
+`_make_repr_script` (2025), `_ne` → `__ne__` (2017), `_has_frozen_superclass` →
+`_has_frozen_base_class` (2018). A user asking "when did this function appear"
+gets the *rename's* date, and a question that has to cross a rename is answerable
+by neither condition, so the procedure now rejects one (trap 44). **Recorded, not
+scheduled:** following a construct across a rename needs an identity rule the
+schema does not have, and that is a design decision for the user rather than
+something to slip into a later unit.
 
 ## v0.5.1: the audit, the freeze and `memory export`, 2026-10-08
 
@@ -2101,6 +2139,20 @@ now says the limit is on language, not on when to start.
     the documented one. Both are trap 35's family again: the block and the runner
     disagree about something the tool does not control.
 
+44. **A renamed definition is two definitions.** The AST pass identifies a
+    definition by its name inside a file, so a rename reports `deleted` and
+    `created` with no link between the two: `_ne` → `__ne__` (2017),
+    `_has_frozen_superclass` → `_has_frozen_base_class` (2018), `_make_repr` →
+    `_make_repr_script` (2025) all read as two short lives, and `structure
+    --history` on the new name starts at the rename. Found while deriving
+    experiment questions — one candidate was rejected because its answer sits on
+    the far side of such a boundary — and it is the first finding in this list
+    that is about the *tool's* output rather than about the environment.
+    **Recorded, not scheduled:** following a construct across a rename needs an
+    identity rule the schema does not have (a fingerprint that survives a name
+    change, or an explicit rename edge), and that is a design decision for the
+    user, not something to slip into a later unit.
+
 ## Environment notes
 
 - **Pushing works over SSH on port 443**, through a repository deploy key and the
@@ -2264,9 +2316,11 @@ now says the limit is on language, not on when to start.
     - **The understanding pilot** (`docs/v0.5-understanding-experiment.md`), which
       gates the *sharing* half — full import, forks, merges — and the AI question,
       and which cannot be run by an agent: it needs six to eight people who did not
-      write the tool. It also needs **four more questions** derived (the six-question
-      set wants two of each calibration level; two are written and the procedure is
-      demonstrated). Its falsification condition is stated in advance — **if it
+      write the tool. **The six questions are written and calibrated** — two at
+      each calibration level, each with its ground truth and its measured
+      calibration record — so the only things left are people, a date, and a
+      second scorer if the author is not to score alone. Its falsification
+      condition is stated in advance — **if it
       shows no difference, the sharing half is not worth building**, and the file
       already written is a backup format and nothing more.
     - **The two small real items** the audit sequenced after portability: a macOS
