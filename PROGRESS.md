@@ -10,7 +10,7 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-08. v0.5.1 is released: an annotated tag at `1a14370` with
+**Last updated: 2026-10-09. v0.5.1 is released: an annotated tag at `1a14370` with
 a GitHub Release, made after all four CI jobs passed on that commit.** The tree
 says 0.5.1 in the six places that are compared and the suite is at 946 tests,
 green locally on 3.11 and 3.13 and then on the runner. **Nothing went red this
@@ -23,7 +23,10 @@ test of the product claim rather than the tool — is designed in
 level) carry their ground truth**, the materials are printable, and the decision
 rule is declared before any data exists. **It needs six to eight people and
 cannot be run by an agent — that and a date are now the whole blocker, because
-the question set is complete.** Preparing it was not free: the tool was pointed at a codebase with 11.7
+the question set is complete.** The second repository is prepared too —
+`python-tqdm/tqdm`, six more calibrated questions — and both documents passed an
+independent review on 2026-10-09 (**READY WITH DISCLOSED LIMITATIONS**, with the
+Memory block deferred by decision; that section is below). Preparing it was not free: the tool was pointed at a codebase with 11.7
 years of history for the first time (`analyze` 1.0 s, `ast` 24.8 s), two of the
 audit's reasoned claims failed measurement, and `git blame` turned out to be the
 instrument — a site is worth asking about when blame lands on a rewrite rather
@@ -48,6 +51,51 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The second repository, the review, and the Memory block deferred, 2026-10-09
+
+**Both halves of the kit exist now.** `docs/v0.5-second-repository-experiment.md`
+is `python-tqdm/tqdm`, chosen by measurement for the one property attrs lacks —
+**no changelog in the tree** (2,132 commits, 12.9 years, 147 authors; message
+bodies at the highest explanatory rate measured, 15%) — with six questions
+T-1…T-6, two at each level, each with its ground truth, its four scoring forms
+and a measured calibration record. `docs/v0.5-second-repository-review.md` is the
+independent review the user asked for before the pilot: every reachability and
+calibration command re-run, every `structure --history` count re-checked against
+the clone, one provable factual error found and fixed (the document's "clone
+HEAD" line named `5dcb022b`, which is the last commit touching `tqdm/std.py`, not
+the clone's HEAD `9cf5a12b`; the cited files are byte-identical at both, so the
+line numbers stand either way), and the verdict **READY WITH DISCLOSED
+LIMITATIONS**.
+
+**What the review found is why the disclosures exist, and it is measurement, not
+suspicion.** Four of the six questions give the treatment arm no information the
+control cannot reach in one command: T-1/T-2 are the two L1 instrument controls
+(the reason is in the tree — one grep), and T-3/T-4 are blame-reachable — T-4 is
+a **negative control**, where the tool's lifecycle for `EMA.__call__` is a single
+event and is narrower than `git log --grep=EMA`. The discrimination therefore
+rests on T-5 and T-6, whose blame is dominated by unrelated rewrites and whose
+8- and 68-event lists contain every commit the answers need. Two more measured
+facts are worth keeping: comparing blame against the tool line by line found
+**two blame artifacts the lifecycle list is immune to** (a lint reflow, and a
+duplicate `return instance` that blame folded onto the wrong commit); and `ast`
+reports 11 of 2,214 tqdm versions unparseable, one of them a **genuinely broken
+tqdm commit** (`except Import Error:`, 2019-10-29) that the tool marks
+unavailable rather than silently skipping.
+
+**The user's decision, taken here: the Memory sub-experiment is deferred to a
+separate experiment, and the pilot runs the six questions without it.** The
+reasons are the review's §7: the primary endpoint and the four pre-registered
+outcomes never touch Memory; the block's own measure (whether a memory is *found
+at all*, and how long that takes) is a different quantity; attrs has one verified
+candidate (`docs/init.md:506`) and tqdm has none, and §8 of the experiment
+document forbids inventing one. **The deferral is annotated where a facilitator
+would have hit it** — §6.4's session table and Appendix B's script in
+`docs/v0.5-understanding-experiment.md`, plus §9.7 of the second-repository
+document — so the frozen session script says "do not run" instead of leaving an
+impossible step to be improvised in the last ten minutes of a session. That
+annotation is the only change to the frozen document, and its hash is updated in
+the review.
 
 ## The v0.5.1 release, 2026-10-08
 
