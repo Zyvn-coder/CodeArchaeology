@@ -4,19 +4,22 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.5.1 is released — annotated tag `v0.5.1`, with a GitHub Release,
-> made after all four CI jobs passed on that commit.** Seventeen commands work
+> **Status: v0.5.2 is the working tree; the newest release is v0.5.1 — annotated
+> tag `v0.5.1`, with a GitHub Release, made after all four CI jobs passed on that
+> commit.** Eighteen commands work
 > today: the ten of v0.4 — through `explain`, the only one that talks to a model —
-> plus seven memory acts
-> (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt` and
-> `export`), which keep what people know about the project beside the evidence and
-> never treat it as evidence. **The evidence rows can be rebuilt from git; the
+> plus eight memory acts
+> (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt`, `export`
+> and `import`), which keep what people know about the project beside the evidence
+> and never treat it as evidence. **The evidence rows can be rebuilt from git; the
 > memory rows cannot** — that exception is the one thing v0.5 changes about the
-> database, and it is stated in *Where the database lives* below. v0.5.1 adds the
+> database, and it is stated in *Where the database lives* below. v0.5.1 wrote the
 > first half of memory portability — a memory can be written to a file you place —
-> and the format is frozen so that an import can be designed on top of it in
-> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md); the
-> audit that argued for it is
+> and froze the format in
+> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md); v0.5.2
+> adds the other half, `memory import`, whose contract is frozen in
+> [`docs/v0.5.2-import-design.md`](docs/v0.5.2-import-design.md), and the audit
+> that argued for both is
 > [`docs/v0.5-product-audit.md`](docs/v0.5-product-audit.md). The evidence layer of
 > v0.3.x is frozen, and what it is and is not is written down in
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md); what v0.4 adds and what
@@ -62,7 +65,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.1
+archaeology 0.5.2
 ```
 
 ## Usage
@@ -1304,6 +1307,55 @@ changed about the memories and nothing else.
 **The file is a copy, not a second copy of record.** Editing it changes nothing
 until something imports it, and every other command reads the database.
 
+### Put the memories back
+
+`memory import` reads a file `memory export` wrote and puts its memories into
+this repository's store. It is the other half of the backup: the file is what
+you carry to a new machine or keep beside a checkout, and this is the command
+that makes it a backup rather than a copy.
+
+```console
+$ archaeology memory export ~/projects/sample-project --output memories.jsonl
+Wrote       3 memories
+To          /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+$ archaeology memory import memories.jsonl ~/projects/sample-project
+Imported    0 memories
+Skipped     3 already here, unchanged
+From        /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+The second command found everything already present and changed nothing. **An
+import that adds no knowledge writes nothing at all** — no rows, and no record
+that it ran — so running it twice leaves the store exactly as it was, byte for
+byte, and it is safe in a script. Into a store that lost its memories (a new
+machine, a deleted cache file), the same command writes them back with their
+statements, authors, times, subjects, states and citations exactly as the file
+carries them.
+
+**The file must be about this repository.** A file exported from another path is
+refused by name, unless you say that path is this project at a new location:
+
+```bash
+archaeology memory import memories.jsonl ~/projects/sample-project --from ~/old/sample-project
+```
+
+`--from` is `adopt`'s device: the path is given in full, and typing it is the
+confirmation. The rows are written as *this* repository's — the path in the file
+is never copied onto them — and a typo matches nothing. The tool cannot tell a
+moved project from a fork, so the assertion is yours; a citation that no longer
+resolves is marked in `memory list` afterwards, the way it always is.
+
+**A conflict refuses the whole file.** If a memory in the file is already here
+and differs in any field, the import stops and names the memory and the field:
+the tool does not choose between two versions of what a person said, and it
+never edits or deletes a row that is already stored. `--dry-run` validates and
+reports without writing anything, and `--json` prints the same report as one
+object.
+
 ### What `explain` does with them
 
 `explain` reads one commit, and the memories related to it are shown beside the
@@ -1744,9 +1796,11 @@ Each release, and what it changed, is recorded in the
   be rebuilt by reading git again; a memory cannot, because it is what a person
   stated. Deleting the database file destroys the memories in it, and nothing
   else can bring them back — so copy the file before replacing it or clearing a
-  cache directory, or run `memory export` and keep the file it writes.
-  **Import is not here yet**: an exported file can be read and kept, and nothing
-  in this version reads one back into a database.
+  cache directory, or run `memory export` and keep the file it writes, and
+  `memory import` puts that file back. **What import does not do**: it does not
+  merge two projects' memories, it does not re-resolve citations, and it cannot
+  tell a moved repository from a fork — that last one is a person's assertion,
+  made with `--from`.
 - **A moved repository needs three steps, and the tool cannot shorten them.**
   The database is named after the path, so a checkout at a new path looks for a
   different file. `analyze --db <old file>`, then `memory adopt --from <old path>`

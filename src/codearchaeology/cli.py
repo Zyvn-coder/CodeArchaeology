@@ -6,11 +6,12 @@ fills it with the structure of every Python file version in that history;
 ``cochange`` read it back; and ``explain`` reads it back through a model, when
 one is configured.
 
-Seven more hang off ``memory`` — ``create``, ``list``, ``show``, ``supersede``,
-``invalidate``, ``adopt`` and ``export`` — and they are the one part of the tool
-that is not derived from the repository. ``export`` is the only command that
-writes a file a person named, and the only one that could replace something the
-tool did not write, which is why it refuses an existing path unless told to.
+Eight more hang off ``memory`` — ``create``, ``list``, ``show``, ``supersede``,
+``invalidate``, ``adopt``, ``export`` and ``import`` — and they are the one part
+of the tool that is not derived from the repository. ``export`` is the only
+command that writes a file a person named, and the only one that could replace
+something the tool did not write, which is why it refuses an existing path
+unless told to.
 """
 
 import sys
@@ -69,6 +70,14 @@ from codearchaeology.memory_export import (
     MemoryExportError,
     build_document as build_export_document,
     write_document as write_export_document,
+)
+from codearchaeology.memory_import import (
+    MemoryImportError,
+    Report as ImportReport,
+    build_json as build_import_json,
+    plan_import,
+    read_file as read_import_file,
+    write_import,
 )
 from codearchaeology.memory_checks import (
     Evidence,
@@ -1308,6 +1317,103 @@ def export(
 
     typer.echo(f"Wrote       {_memory_count(len(memories))}")
     typer.echo(f"To          {target}")
+    typer.echo(f"Repository  {repository}")
+    typer.echo(f"Database    {database}")
+
+
+@memory_app.command("import")
+def import_memories(
+    file: Path = typer.Argument(
+        ..., help="The file to read, as 'memory export' wrote it."
+    ),
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    from_path: str = typer.Option(
+        None,
+        "--from",
+        help="The path the memories were made about, in full. Typing it is the"
+        " confirmation.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate and report, and write nothing."
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the block."
+    ),
+) -> None:
+    """Put a file's memories back into this project's store.
+
+    **The other half of the backup.** ``memory export`` writes a file a person
+    can carry; this reads it back, writing every field exactly as the file
+    carries it — statements, authors, times, subjects, states and citations —
+    and nothing else. An import that adds no knowledge writes nothing at all,
+    not even a record that it ran, so running it twice leaves the store exactly
+    as it was.
+
+    **The file must be about this repository.** A file exported from another
+    path is refused by name unless ``--from`` names that path in full — the same
+    device ``adopt`` uses, and the same words. The rows are written as *this*
+    repository's, and the path in the file is never copied onto them.
+
+    **A conflict refuses the whole file.** A memory that is already here and
+    differs in any field stops the import, naming the memory and the field: the
+    tool does not choose between two versions of what a person said, and it
+    never edits or deletes a row that is stored.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        _warn_if_behind(repository_root, database)
+        # The file is read and validated before the store is opened, so a file
+        # that is not this format's never reaches the database at all.
+        document = read_import_file(file)
+        with open_analysis(repository_root, database) as connection:
+            plan = plan_import(
+                connection,
+                document,
+                repository_path=repository_root,
+                from_path=from_path,
+            )
+            if not dry_run:
+                write_import(
+                    connection,
+                    plan,
+                    repository=repository_identity(repository_root),
+                    source=str(Path(file).resolve()),
+                    imported_at=datetime.now().astimezone(),
+                )
+    except (
+        GitError,
+        AnalysisError,
+        MemoryStoreError,
+        MemoryImportError,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    repository = repository_identity(repository_root)
+    report = ImportReport(
+        file=str(Path(file).resolve()),
+        file_repository=document.header.repository,
+        repository=repository,
+        format_version=document.header.version,
+        count_in_file=len(document.rows),
+        imported=len(plan.inserts),
+        skipped=plan.skipped,
+        dry_run=dry_run,
+    )
+
+    if as_json:
+        typer.echo(build_import_json(report))
+        return
+
+    if dry_run:
+        typer.echo(f"Dry run     {_memory_count(report.imported)} would be imported")
+    else:
+        typer.echo(f"Imported    {_memory_count(report.imported)}")
+    typer.echo(f"Skipped     {report.skipped} already here, unchanged")
+    typer.echo(f"From        {report.file}")
+    if from_path is not None:
+        typer.echo(f"Made about  {document.header.repository}")
     typer.echo(f"Repository  {repository}")
     typer.echo(f"Database    {database}")
 

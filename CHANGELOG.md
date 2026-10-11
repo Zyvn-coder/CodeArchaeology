@@ -8,6 +8,53 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.5.2] - 2026-10-11
+
+The other half of memory portability: `memory import` puts back what `memory
+export` wrote. The freeze is `docs/v0.5.2-import-design.md`, whose §16 records
+the four decisions the user took on the draft — and v0.5.1's own section said
+where the whole cost of the feature lives: in the conflict rules. It is there:
+the file is the unit of success, an import that adds nothing writes nothing, and
+a row that is already stored is never edited.
+
+### Added
+
+- **`archaeology memory import <file>`** — the eighteenth command. It restores a
+  file that was exported from this project, in place or after a move the person
+  asserts with `--from`, in one transaction, writing every field exactly as the
+  file carries it and nothing else. `--dry-run` validates and reports without
+  writing anything; `--json` prints the same report as one eight-field object.
+- **`--from <path>`, `adopt`'s device** — a file that names another repository is
+  refused by name unless the path is typed in full and matches the file's own
+  header exactly. The rows are written as *this* repository's; the path in the
+  file is never copied onto them. The honest limit is stated where it belongs: an
+  assertion cannot tell a moved repository from a fork, and the preview that
+  would warn before the write is not in this version.
+- **`tests/test_memory_import.py`** — fifty-five tests holding the design's §11
+  matrix. The three that carry the weight: the round trip is byte-identical
+  (export → import → export); a no-op import leaves the database file's own
+  sha256 unchanged, not merely every row; and a failure injected *by SQLite*
+  mid-file — in a store that has memory tables and in one that has none — leaves
+  nothing behind, including the tables and the stamp.
+
+### Changed
+
+- **A store that has no memory tables is built inside the import's transaction.**
+  That state — a freshly analyzed store — is the ordinary restore case, and the
+  DDL and the stamp are written in the same transaction as the rows, which is
+  opened explicitly with `BEGIN`. The reason is measured: Python's `sqlite3`
+  starts its implicit transaction only at the first DML, so a `CREATE TABLE`
+  before one is committed outside the transaction, and `executescript` commits
+  the open transaction first. A failure therefore cannot leave an `_UNSTAMPED`
+  store behind, which would refuse every later memory read.
+- **The import path never re-stamps.** `prepare_memory` and `storage.set_meta`
+  are not called: an identical-value `INSERT OR REPLACE` into `meta` changes the
+  database file's bytes (measured), and the no-op promise is a statement about
+  the bytes.
+- **`MEMORY_SIDE`** in `tests/test_memory_provenance.py` gained
+  `memory_import.py`, so the evidence layer still cannot reach the memory one,
+  and the command line still imports every memory module there is.
+
 ## [0.5.1] - 2026-10-08
 
 The first half of memory portability: a memory can be written to a file a person

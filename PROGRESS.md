@@ -10,11 +10,18 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-09. v0.5.1 is released: an annotated tag at `1a14370` with
-a GitHub Release, made after all four CI jobs passed on that commit.** The tree
-says 0.5.1 in the six places that are compared and the suite is at 946 tests,
-green locally on 3.11 and 3.13 and then on the runner. **Nothing went red this
-time** — the first release here that needed no second commit since v0.4.0 — and
+**Last updated: 2026-10-11. v0.5.2 is in the working tree, and it is not
+committed, pushed or tagged yet: the eighteenth command, `memory import`, its
+freeze (`docs/v0.5.2-import-design.md`, still untracked) and the review that
+found eight defects after the suite was already green.** The tree says 0.5.2 in
+the six places that are compared and the suite is at 1024 tests, green locally
+on 3.13 and 3.11. The freeze's four decisions are the design's §16; the traps
+the unit paid for, the eight fixes and what was deliberately left alone are in
+the v0.5.2 section below. **v0.5.1 was released: an annotated tag at `1a14370`
+with a GitHub Release, made after all four CI jobs passed on that commit.** The
+suite was at 946 tests then, green locally on 3.11 and 3.13 and then on the
+runner. **Nothing went red that time** — the first release here that needed no
+second commit since v0.4.0 — and
 the reason is worth keeping: the two new README blocks were replayed locally on
 Windows *before* the push, which is where v0.5.0's three failures would have been
 caught. Phase 2 is prepared and not run: the understanding experiment — the first
@@ -51,6 +58,71 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The v0.5.2 unit: the freeze, the import, and the review, 2026-10-11
+
+**Eight defects were found by review *after* the suite was green**, which is the
+thing to keep: the tests held what the design's §11 matrix listed, and the
+defects lived where the matrix had no row. Each was fixed with its own test; the
+decisions behind the fixes, because they are what a later reader will question:
+
+- **A time without an offset is refused** — §5.2's round-trip rule applied as
+  the writer means it (`_now()` is `astimezone()`, so a naive spelling is one the
+  writer does not produce). A naive moment is read as the *importing* machine's
+  clock — one file, two orders on two machines — and on Windows before 1970
+  `int(fromisoformat(s).timestamp())` raises `OSError` (measured: `1970-01-01T00:00:00`
+  → `[Errno 22]`). `_epoch_of` refuses one too rather than letting `mktime`
+  decide.
+- **Text a UTF-8 file cannot carry is refused** — a lone surrogate from a JSON
+  escape (`"\\ud800"`) is a string Python holds and `sqlite3` refuses at bind
+  time with `UnicodeEncodeError` (measured).
+- **The 4000-character cap is on the value that is written**, not on its trim:
+  the row stores the statement verbatim, so `" " * 5000 + "x"` would have entered
+  at 5001 characters — a row §10 says the cap excludes.
+- **The citation duplicate rule reads the stripped reference**, the way the acts
+  do (`memory._checked_citations`): two spellings of one reference are one
+  reference.
+- **The closure check reads the store's rows for the successors the file names**,
+  not only for the file's own ids: §7.3 allows a successor an earlier import
+  wrote, and the old check refused exactly that case.
+- **`write_import` refuses a connection with an open transaction** instead of
+  switching `isolation_level` to `None`, which commits whatever is open
+  (measured). No command-line path reaches it; the guard is for the next caller.
+- **`sqlite3.Error` leaves `write_import` as a sentence** — §10 promises the
+  CLI's error surface, and the CLI's `except` arms do not name `sqlite3.Error`,
+  so a locked store or a full disk would have shown a traceback. (The other
+  commands have the same gap; that is pre-existing and out of this unit.)
+- **The §11.2 #32 scan now covers the import entry point** (`IMPORT_ACT` in
+  `tests/test_memory_boundaries.py`), which is what the matrix asked for and the
+  implementation had replaced with a narrower test of its own.
+
+**The traps.** Python's `sqlite3` opens its implicit transaction only at the
+first DML, so a `CREATE TABLE` executed before one is committed *outside* it;
+that is why `write_import` issues `BEGIN IMMEDIATE` itself, executes
+`memory.MEMORY_SCHEMA` statement by statement inside it, and never uses
+`executescript` (which commits the open transaction first). And
+`isolation_level` is not a passive attribute: assigning `None` commits. Both
+measured on 3.11/3.12/3.13, both written into the design's §8.2.
+
+**Found by the review and deliberately not fixed** — design gaps, not defects,
+listed so that tightening them is a decision someone makes: the acts *strip* the
+text they store and import stores the file's value verbatim, so a hand-edited
+file can put a padded statement, author or reference in the store; a
+`since.commit` carries no shape check and `memory_checks.since_moment` uses it as
+a `LIKE` prefix (`"%"` would display a fabricated date — the act layer accepts
+any text too, so the gap is not import's); two rows may name one successor
+(§7.3's own case can produce it, and `memory._supersedes` then shows one
+predecessor); the design document's §17 still reads "no implementation was
+started", because the frozen document was left byte-identical; and the README's
+"byte for byte" no-op claim carries no hot-journal caveat where the design's
+§6.4 does. §15.2's three tolerances (a missing final newline, trailing
+whitespace and `\r\n`, no size cap) remain pending.
+
+**Next: commit and push, CI on the actual commit, then the tag and the release —
+the same order as v0.5.1.** `docs/v0.5.2-import-design.md` is untracked and
+belongs in this commit (both READMEs link to it); `docs/pilot-kit/` is untracked
+and is *not* part of this unit — it is the understanding experiment's materials,
+for a separate commit or none.
 
 ## The second repository, the review, and the Memory block deferred, 2026-10-09
 

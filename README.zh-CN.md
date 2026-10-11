@@ -4,15 +4,18 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.5.1 已发布——注释 tag `v0.5.1`，附 GitHub Release，四个 CI job 在该提交
-> 上全部通过之后才打的。** 现在有十七个
+> **状态：工作区是 v0.5.2；最新发布仍是 v0.5.1——注释 tag `v0.5.1`，附 GitHub Release，
+> 四个 CI job 在该提交
+> 上全部通过之后才打的。** 现在有十八个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
-> 的七个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`）
+> 的八个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`、
+> `import`）
 > ——它们把人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git
 > 重建，memory 行不能**——这是 v0.5 对数据库唯一的一处改动，写在下面的"数据库放在哪"一节里。
-> v0.5.1 加的是 memory 可携带性的一半——memory 可以写成一个由你放置的文件——格式已经冻结，
-> 好让 import 能在它之上设计，写在
-> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md)；主张要做这件事的
+> v0.5.1 写下了 memory 可携带性的一半——memory 可以写成一个由你放置的文件——格式冻结在
+> [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md)；v0.5.2 补上另一半
+> `memory import`，它的契约冻结在
+> [`docs/v0.5.2-import-design.md`](docs/v0.5.2-import-design.md)；主张要做这两件事的
 > 审计是 [`docs/v0.5-product-audit.md`](docs/v0.5-product-audit.md)。v0.3.x 的证据层已冻结，
 > 它是什么、不是什么写在
 > [`docs/v0.3-final-state.md`](docs/v0.3-final-state.md) 里；v0.4 加了什么、由什么守住，
@@ -54,7 +57,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.1
+archaeology 0.5.2
 ```
 
 ## 用法
@@ -1171,6 +1174,47 @@ replace it
 **这个文件是一份拷贝，不是第二个记录源。** 编辑它不会有任何影响，直到有东西 import 它；其余
 所有命令读的都是数据库。
 
+### 把 memory 放回去
+
+`memory import` 读一个 `memory export` 写出的文件，把里面的 memory 放回这个仓库的存储里。
+它是备份的另一半：文件是你带到新机器上、或者放在检出旁边的东西，而这个命令让它成为备份，
+而不是一份拷贝。
+
+```console
+$ archaeology memory export ~/projects/sample-project --output memories.jsonl
+Wrote       3 memories
+To          /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+$ archaeology memory import memories.jsonl ~/projects/sample-project
+Imported    0 memories
+Skipped     3 already here, unchanged
+From        /home/you/projects/sample-project/memories.jsonl
+Repository  /home/you/projects/sample-project
+Database    /home/you/.cache/codearchaeology/82d48b376e387fde.db
+```
+
+第二条命令发现全都在了，于是什么都没改。**一次没有新增任何知识的 import 什么都不写**——
+不写行，也不写"它跑过"的记录——所以跑第二遍之后，存储和之前逐字节一样，放在脚本里是安全的。
+放进一个丢了 memory 的存储（新机器、被删掉的缓存文件），同一条命令会把它们原样写回去：
+statement、作者、时间、subject、状态和 citations，都和文件里带的一模一样。
+
+**文件必须是关于这个仓库的。** 从别的路径导出的文件会被点名拒绝，除非你说明那个路径就是
+这个项目搬到了新位置：
+
+```bash
+archaeology memory import memories.jsonl ~/projects/sample-project --from ~/old/sample-project
+```
+
+`--from` 用的是 `adopt` 的那套：路径要完整敲出来，敲出来就是确认。写进去的行是**这个**仓库的
+——文件里的路径不会被抄到行上——打错一个字符就什么都匹配不上。工具分辨不出"搬走的项目"和
+fork，所以这个断言由你负责；之后解析不到的 citation 会像平时一样，在 `memory list` 里被标出来。
+
+**一处冲突就拒绝整份文件。** 如果文件里的某条 memory 已经在这里、但任何字段不同，导入会停下
+来，点名那条 memory 和那个字段：工具不会在一个人说过的两个版本之间替你做选择，也永远不会改
+写或删除已经存下的行。`--dry-run` 只校验、只报告，什么都不写；`--json` 把同一份报告打印成一个
+对象。
+
 ### `explain` 会拿这些 memory 做什么
 
 `explain` 读的是一个提交，和它相关的 memory 会出现在证据**旁边**——同一个输出里、有自己的
@@ -1537,8 +1581,9 @@ benchmarks/
 - **一条 memory 只存在一个地方。** 库里其他任何东西都能靠重读 git 重建；memory 不能，
   因为它是人说过的话。删掉数据库文件就会删掉里面的 memory，别的任何东西都找不回来——
   所以替换这个文件、或清理缓存目录之前，先把它复制一份，或者跑一次 `memory export`
-  把写出的文件收好。**import 还没有做**：导出的文件可以读、可以保存，但这个版本里没有
-  任何东西能把它读回数据库。
+  把写出的文件收好，`memory import` 能把它放回去。**import 不做的事**：它不合并两个项目的
+  memory，不重新解析 citation，也分辨不出"搬走的仓库"和 fork——最后这件事由人来断言，
+  用 `--from`。
 - **仓库搬家要三步，工具没法缩短它。** 数据库是按路径命名的，所以换到新路径的检出会去找
   另一个文件。回来的路是 `analyze --db <旧文件>` 再 `memory adopt --from <旧路径>`，写在
   上面的"仓库搬家的时候"一节里。自己去找旧文件，等于要猜两个路径是同一个项目，而这个工具

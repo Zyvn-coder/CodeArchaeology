@@ -71,8 +71,12 @@ MEMORY_STATEMENT = (
 PROJECT_STATEMENT = "We do not add runtime dependencies casually."
 ENDED_STATEMENT = "The health check belonged in core/app.py."
 
-# The three acts that write. Nothing but the command line may call one of them.
+# The acts that write. Nothing but the command line may call one of them.
 WRITING_ACTS = ("admit", "supersede", "invalidate")
+
+# The import act writes through its own module rather than ``memory``, so the
+# scan below names the pair: the module it comes from and the name.
+IMPORT_ACT = ("codearchaeology.memory_import", "write_import")
 
 
 @pytest.fixture(scope="module")
@@ -537,10 +541,10 @@ def test_only_the_command_line_can_call_a_writing_act() -> None:
     """Who may write, held at the level of who may *call* the store.
 
     ``admit``, ``supersede`` and ``invalidate`` are the only ways a row is
-    created or changed, so "only a person's explicit act writes memory" is a
-    statement about which modules reach them. A model's answer travels
-    provider → validation → the command line, and this is the test that fails if
-    any of those three — or anything else in the package — starts writing.
+    created or changed, and the import act (``write_import``, in its own module)
+    is the fourth. A model's answer travels provider → validation → the command
+    line, and this is the test that fails if any of those three — or anything
+    else in the package — starts writing.
     """
     modules = sorted(SOURCE.glob("*.py"))
     assert {"provider.py", "validation.py", "explanation.py", "selection.py"} <= {
@@ -553,7 +557,8 @@ def test_only_the_command_line_can_call_a_writing_act() -> None:
         if {
             name
             for module, name in _imported_names(path)
-            if module == "codearchaeology.memory" and name in WRITING_ACTS
+            if (module == "codearchaeology.memory" and name in WRITING_ACTS)
+            or (module, name) == IMPORT_ACT
         }
     }
 
@@ -588,6 +593,7 @@ def test_the_writing_acts_are_reachable_at_all() -> None:
     }
 
     assert set(WRITING_ACTS) <= imported
+    assert IMPORT_ACT in _imported_names(SOURCE / "cli.py")
 
 
 # --- the validator: memory may not impersonate evidence ----------------------
