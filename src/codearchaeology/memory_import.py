@@ -102,6 +102,13 @@ SUBJECT_FIELDS = {
     "commit": ("commit",),
 }
 
+# The characters a commit sha holds: ``commit.HEXADECIMAL``'s set, written out
+# rather than imported, because the reader is a pure function of the file's text
+# and does not reach into the evidence layer. ``storage.find_commits`` uses the
+# value as a ``LIKE`` pattern and says so itself — the prefix "has to hold sha
+# characters and nothing else".
+SHA_CHARACTERS = frozenset("0123456789abcdefABCDEF")
+
 
 class MemoryImportError(RuntimeError):
     """Raised when a file cannot be imported, with the sentence for the person."""
@@ -647,12 +654,21 @@ def _read_since(value, *, index: int, name: str):
             f" date, not both"
         )
     if "commit" in value:
-        return (
-            _required_text(
-                value["commit"], index=index, name=name, what="a start commit"
-            ),
-            None,
+        start = _required_text(
+            value["commit"], index=index, name=name, what="a start commit"
         )
+        # ``memory_checks.since_moment`` reads this value as a prefix for
+        # ``storage.find_commits``, whose own docstring says the prefix "has to
+        # hold sha characters and nothing else" — ``"%"`` would match every
+        # stored commit and put a fabricated date beside the memory. The acts
+        # resolve the commit before they store it, so anything else is a
+        # spelling the writer does not produce.
+        if any(character not in SHA_CHARACTERS for character in start):
+            raise MemoryImportError(
+                f"{name}: line {index}: {start!r} is not a commit sha; a memory's"
+                f" start is the commit this tool resolved"
+            )
+        return (start, None)
     if "date" not in value:
         raise MemoryImportError(
             f"{name}: line {index}: a memory's start is a commit or a date"

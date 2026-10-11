@@ -895,6 +895,56 @@ def test_two_spellings_of_one_reference_are_one_reference(
     assert _state(fresh) == before
 
 
+@pytest.mark.parametrize("value", ["%", "core/app.py", "1ede%27", "a b"])
+def test_a_start_commit_that_is_not_a_sha_is_refused(
+    sample_repo: Path, store: Path, tmp_path: Path, value: str
+) -> None:
+    """The stored start is read as a ``LIKE`` prefix, so it holds sha characters.
+
+    ``memory_checks.since_moment`` hands this value to ``find_commits``, whose own
+    docstring says the prefix "has to hold sha characters and nothing else":
+    ``"%"`` would match every stored commit and put a fabricated date beside the
+    memory. The acts resolve the commit before they store it, so the reader
+    requires the spelling they produce.
+    """
+    values = [
+        _header(_identity(sample_repo), 1),
+        _row(_identity(sample_repo), SPARE_ID, since={"commit": value}),
+    ]
+    file = _file(tmp_path, _document_of(values))
+    fresh = _fresh(sample_repo, tmp_path)
+    before = _state(fresh)
+
+    result = _run(sample_repo, fresh, "import", str(file))
+
+    assert result.exit_code == 1
+    assert "is not a commit sha" in result.stderr
+    assert result.stdout == ""
+    assert _state(fresh) == before
+
+
+def test_a_start_commit_that_is_a_sha_prefix_is_accepted(
+    sample_repo: Path, store: Path, tmp_path: Path
+) -> None:
+    """The rule is the sha characters, not the full length.
+
+    A store can hold a prefix — the library's ``admit`` takes one, and
+    ``load_commit`` accepts one from a person — so the reader refuses only what
+    the store could not carry.
+    """
+    values = [
+        _header(_identity(sample_repo), 1),
+        _row(_identity(sample_repo), SPARE_ID, since={"commit": "1edec27"}),
+    ]
+    file = _file(tmp_path, _document_of(values))
+    fresh = _fresh(sample_repo, tmp_path)
+
+    result = _run(sample_repo, fresh, "import", str(file))
+
+    assert result.exit_code == 0, result.stderr
+    assert "Imported    1 memory" in result.stdout
+
+
 def test_an_unknown_key_is_refused_in_the_header_and_in_a_row(
     sample_repo: Path, store: Path, tmp_path: Path
 ) -> None:

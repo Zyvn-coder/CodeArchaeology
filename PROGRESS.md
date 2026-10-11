@@ -10,14 +10,16 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-11. v0.5.2 is released: an annotated tag at `bcfea01` with
-a GitHub Release, made after all four CI jobs passed on that commit.** The tree
-says 0.5.2 in the six places that are compared and the suite is at 1024 tests,
-green locally on 3.13 and 3.11 and then on the runner. The release carries the
-eighteenth command, `memory import`, and the review that found eight defects
-after the suite was already green — the freeze's four decisions are the design's
-§16, and the traps the unit paid for, the eight fixes and what was deliberately
-left alone are in the v0.5.2 section below. **v0.5.1 was released: an annotated tag at `1a14370`
+**Last updated: 2026-10-11. v0.5.3 is in the working tree and not yet released:
+the `since` hardening, the three §15.2 tolerances decided, and the pilot kit in
+the repository.** The tree says 0.5.3 in the six places that are compared and the
+suite is at 1030 tests, green locally on 3.13 and 3.11. **v0.5.2 is released: an
+annotated tag at `bcfea01` with a GitHub Release, made after all four CI jobs
+passed on that commit.** The release carries the eighteenth command,
+`memory import`, and the review that found eight defects after the suite was
+already green — the traps the unit paid for, the eight fixes and what was
+deliberately left alone are in the v0.5.2 section below; the v0.5.3 section above
+it holds the hardening's reasons and the two decisions taken with it. **v0.5.1 was released: an annotated tag at `1a14370`
 with a GitHub Release, made after all four CI jobs passed on that commit.** The
 suite was at 946 tests then, green locally on 3.11 and 3.13 and then on the
 runner. **Nothing went red that time** — the first release here that needed no
@@ -58,6 +60,57 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The v0.5.3 hardening: the `since` rule, the tolerances decided, and the pilot kit, 2026-10-11
+
+**The `since` gap was the one the v0.5.2 review left open with a symptom, and the
+symptom is gone.** `memory_checks.since_moment` read the stored start as a prefix
+for `storage.find_commits`, whose own docstring says the prefix "has to hold sha
+characters and nothing else" — so a stored `"%"` matched *every* commit and
+`memory list` showed a date that had nothing to do with the memory. The module
+already had the device (`_prefix`, with the same sentence in its docstring) and
+`since_moment` bypassed it. Two changes, one rule:
+
+- **`since_moment` refuses to use a value that does not hold sha characters** —
+  returning `None`, the same answer a commit a rewrite removed gets, so the
+  memory reads "not provably in force" instead of carrying a fabricated date —
+  and it checks with `commit.HEXADECIMAL`, the constant `load_commit` already
+  checks with. This is the half that fixes the *display* for every store shape,
+  including a row written by hand or through the library.
+- **`memory import` refuses a file whose `since` commit is not a sha**, naming
+  the value. The reader is the boundary, and the rule is "the characters a sha
+  holds", not the full length: a store can hold a prefix (the library's `admit`
+  takes one, and `load_commit` accepts one from a person), so the reader refuses
+  only what the store could not carry. The constant is written out in
+  `memory_import.py` rather than imported: the reader is a pure function of the
+  file's text and does not reach into the evidence layer.
+
+**The three §15.2 tolerances are decided, not pending: they stay.** A missing
+final newline, trailing whitespace and `\r\n`, and no file-size cap cannot change
+what a valid file means — the writer always emits the final newline and never
+emits the rest — and tightening them would refuse a hand-copied file over a
+difference that means nothing. The cap stays a deliberate non-defence: the file is
+the user's own, the per-row caps bound each row, and one transaction bounds a
+partial write.
+
+**`docs/pilot-kit/` is committed, in its own docs-only commit.** It is the
+printable form of the understanding experiment's materials, cut from the two
+experiment documents at `e41b3de` and reviewed on 2026-10-09, and it had been
+untracked for two units — a deliverable that existed only in the working tree.
+One thing worth keeping: the repository is public and `d1`/`d2` carry the ground
+truth, but the source documents they were cut from are public too, so committing
+the kit discloses nothing the design had not already disclosed.
+
+**What is still open after this:** `subject.commit` carries no shape check (it is
+matched exactly, never as a prefix, so it has no symptom to fix); the acts still
+strip the text they store where import stores the file's value verbatim; and two
+rows may name one successor. Each is a design gap with a stated consequence, and
+none is a defect.
+
+**The commits land in two parts** — the pilot kit first (so the hardening's
+CHANGELOG entry can refer to something that exists), then the hardening — and
+then the tag and the release follow the usual order: CI green on the actual commit
+first, then `v0.5.3` and the release.
 
 ## The v0.5.2 unit: the freeze, the import, and the review, 2026-10-11
 

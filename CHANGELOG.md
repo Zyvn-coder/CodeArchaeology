@@ -8,6 +8,42 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.5.3] - 2026-10-11
+
+A hardening pass on `memory import`, and the decisions that were left open when
+v0.5.2 shipped. One is a defect the review found and this unit closed; the others
+are decisions taken rather than deferred.
+
+### Fixed
+
+- **A `since` commit that is not a sha can no longer produce a date.** The stored
+  start is read as a prefix for `storage.find_commits`, whose own docstring says
+  the prefix "has to hold sha characters and nothing else" — so a value like
+  `"%"` matched *every* stored commit, and `memory list` showed a date that had
+  nothing to do with the memory. `memory_checks.since_moment` now refuses to use
+  a value that does not hold sha characters — the same check `commit.load_commit`
+  makes before it queries — and `memory import` refuses a file that carries one,
+  naming the value: the acts resolve the commit before they store it, so anything
+  else is a spelling the writer does not produce. A row written by hand or
+  through the library was the reachable case; the acts are not the only way a row
+  can be written.
+
+### Changed
+
+- **The three reader tolerances of `docs/v0.5.2-import-design.md` §15.2 are
+  decided rather than pending: they stay.** A missing final newline, trailing
+  whitespace and `\r\n` line endings, and the absence of any file-size cap cannot
+  change what a valid file means — the writer always emits the final newline and
+  never emits the rest — and tightening them would refuse a hand-copied file over
+  a difference that means nothing. The size cap stays a deliberate non-defence:
+  the file is the user's own, the per-row caps bound each row, and one
+  transaction bounds a partial write.
+- **`docs/pilot-kit/` is in the repository** — the printable materials for the
+  understanding experiment, cut from `docs/v0.5-understanding-experiment.md` and
+  `docs/v0.5-second-repository-experiment.md` at commit `e41b3de` and reviewed on
+  2026-10-09. It is preparation, not a result: no volunteer has been recruited
+  and no session has been run.
+
 ## [0.5.2] - 2026-10-11
 
 The other half of memory portability: `memory import` puts back what `memory

@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from codearchaeology.cochange import analyze_cochange, load_cochange_commits
-from codearchaeology.commit import CommitNotFound, load_commit
+from codearchaeology.commit import CommitNotFound, HEXADECIMAL, load_commit
 from codearchaeology.context import diff_ranges
 from codearchaeology.file import normalise
 from codearchaeology.memory import Citation, Memory, MemoryStoreError, Subject
@@ -198,11 +198,22 @@ def since_moment(evidence: Evidence, memory: Memory) -> datetime | None:
     words — so the reader is shown where the time came from rather than asked to
     trust it, and the section's rule compares against the same value. A commit
     the history no longer holds gives ``None``, which is what makes a memory
-    whose start has gone "not provably in force" rather than in force.
+    whose start has gone "not provably in force" rather than in force. A stored
+    start that does not hold sha characters gives ``None`` too: it names no
+    commit, and a reader is not shown a date nobody can stand behind.
     """
     if memory.since_commit_sha is None:
         return None
-    matches = find_commits(evidence.connection, memory.since_commit_sha[:7])
+    prefix = memory.since_commit_sha[:7]
+    # ``find_commits`` turns the value into a ``LIKE`` pattern — its own
+    # docstring says the prefix "has to hold sha characters and nothing else",
+    # and ``"%"`` would match every stored commit — so this is the same check
+    # ``commit.load_commit`` makes before it queries. The acts resolve the commit
+    # before they store it; this is the guard for a row written by hand or
+    # through the library.
+    if any(character not in HEXADECIMAL for character in prefix):
+        return None
+    matches = find_commits(evidence.connection, prefix)
     return matches[0].committed_at if matches else None
 
 
@@ -338,7 +349,7 @@ def _prefix(ref: str) -> str:
     anything but sha characters must not reach it — the same reason
     ``commit.py`` checks before it queries.
     """
-    return "".join(character for character in ref if character in "0123456789abcdefABCDEF")
+    return "".join(character for character in ref if character in HEXADECIMAL)
 
 
 def _nothing_touched(path: str) -> str:

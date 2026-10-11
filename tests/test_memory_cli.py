@@ -640,6 +640,40 @@ def test_create_accepts_a_cochange_pair_the_analysis_reports(
     assert result.exit_code == 0, result.stderr
 
 
+def test_a_start_that_is_not_a_sha_shows_no_date(
+    sample_repo: Path, database: Path
+) -> None:
+    """A stored start is read as a ``LIKE`` prefix, so it holds sha characters.
+
+    ``"%"`` would match every stored commit and put a date beside the memory that
+    has nothing to do with it. The acts resolve the commit before they store it,
+    so a value like this arrives only by hand or through the library — and the
+    reader shows the start without a date rather than one it cannot stand behind.
+    """
+    connection = connect(database)
+    try:
+        admit(
+            connection,
+            repository_path=sample_repo,
+            statement="A start that names no commit.",
+            subject=MemorySubject("repository"),
+            since_commit_sha="%",
+        )
+    finally:
+        connection.close()
+
+    result = _run(sample_repo, database, "list", "--json")
+
+    assert result.exit_code == 0, result.stderr
+    document = json.loads(result.stdout)
+    entry = next(
+        memory
+        for memory in document["memories"]
+        if memory["statement"] == "A start that names no commit."
+    )
+    assert entry["since"] == {"commit": "%", "commit_date": None}
+
+
 # --- listing -----------------------------------------------------------------
 
 
