@@ -4,9 +4,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.5.3 is the working tree; the newest release is v0.5.2 — annotated
-> tag `v0.5.2`, with a GitHub Release, made after all four CI jobs passed on that
-> commit.** Eighteen commands work
+> **Status: v0.5.3 is released — annotated tag `v0.5.3`, with a GitHub Release,
+> made after all four CI jobs passed on that commit.** Eighteen commands work
 > today: the ten of v0.4 — through `explain`, the only one that talks to a model —
 > plus eight memory acts
 > (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt`, `export`

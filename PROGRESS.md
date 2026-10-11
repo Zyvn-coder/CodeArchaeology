@@ -10,16 +10,17 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-11. v0.5.3 is in the working tree and not yet released:
-the `since` hardening, the three §15.2 tolerances decided, and the pilot kit in
-the repository.** The tree says 0.5.3 in the six places that are compared and the
-suite is at 1030 tests, green locally on 3.13 and 3.11. **v0.5.2 is released: an
-annotated tag at `bcfea01` with a GitHub Release, made after all four CI jobs
-passed on that commit.** The release carries the eighteenth command,
-`memory import`, and the review that found eight defects after the suite was
-already green — the traps the unit paid for, the eight fixes and what was
-deliberately left alone are in the v0.5.2 section below; the v0.5.3 section above
-it holds the hardening's reasons and the two decisions taken with it. **v0.5.1 was released: an annotated tag at `1a14370`
+**Last updated: 2026-10-11. v0.5.3 is released: an annotated tag at `90b2c8a` with
+a GitHub Release, made after all four CI jobs passed on that commit.** The tree
+says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
+green locally on 3.13 and 3.11 and then on the runner. The release carries the
+`since` hardening, the three §15.2 tolerances decided, and the pilot kit — the
+v0.5.3 section below holds the reasons. **v0.5.2 is released: an annotated tag at
+`bcfea01` with a GitHub Release, made after all four CI jobs passed on that
+commit.** The release carries the eighteenth command, `memory import`, and the
+review that found eight defects after the suite was already green — the traps the
+unit paid for, the eight fixes and what was deliberately left alone are in the
+v0.5.2 section below. **v0.5.1 was released: an annotated tag at `1a14370`
 with a GitHub Release, made after all four CI jobs passed on that commit.** The
 suite was at 946 tests then, green locally on 3.11 and 3.13 and then on the
 runner. **Nothing went red that time** — the first release here that needed no
@@ -107,10 +108,10 @@ strip the text they store where import stores the file's value verbatim; and two
 rows may name one successor. Each is a design gap with a stated consequence, and
 none is a defect.
 
-**The commits land in two parts** — the pilot kit first (so the hardening's
-CHANGELOG entry can refer to something that exists), then the hardening — and
-then the tag and the release follow the usual order: CI green on the actual commit
-first, then `v0.5.3` and the release.
+**Released, in the order the rule fixes:** `c4da429` (the pilot kit, so the
+hardening's CHANGELOG entry could refer to something that already exists), then
+`90b2c8a` (the hardening), then CI run `38145815632` green on all four jobs on
+that commit, then the annotated tag `v0.5.3` and the release.
 
 ## The v0.5.2 unit: the freeze, the import, and the review, 2026-10-11
 
