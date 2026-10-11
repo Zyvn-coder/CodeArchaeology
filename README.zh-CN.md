@@ -4,8 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：工作区是 v0.5.2；最新发布仍是 v0.5.1——注释 tag `v0.5.1`，附 GitHub Release，
-> 四个 CI job 在该提交
+> **状态：v0.5.2 已发布——注释 tag `v0.5.2`，附 GitHub Release，四个 CI job 在该提交
 > 上全部通过之后才打的。** 现在有十八个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
 > 的八个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`、

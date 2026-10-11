@@ -10,14 +10,14 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-11. v0.5.2 is in the working tree, and it is not
-committed, pushed or tagged yet: the eighteenth command, `memory import`, its
-freeze (`docs/v0.5.2-import-design.md`, still untracked) and the review that
-found eight defects after the suite was already green.** The tree says 0.5.2 in
-the six places that are compared and the suite is at 1024 tests, green locally
-on 3.13 and 3.11. The freeze's four decisions are the design's §16; the traps
-the unit paid for, the eight fixes and what was deliberately left alone are in
-the v0.5.2 section below. **v0.5.1 was released: an annotated tag at `1a14370`
+**Last updated: 2026-10-11. v0.5.2 is released: an annotated tag at `bcfea01` with
+a GitHub Release, made after all four CI jobs passed on that commit.** The tree
+says 0.5.2 in the six places that are compared and the suite is at 1024 tests,
+green locally on 3.13 and 3.11 and then on the runner. The release carries the
+eighteenth command, `memory import`, and the review that found eight defects
+after the suite was already green — the freeze's four decisions are the design's
+§16, and the traps the unit paid for, the eight fixes and what was deliberately
+left alone are in the v0.5.2 section below. **v0.5.1 was released: an annotated tag at `1a14370`
 with a GitHub Release, made after all four CI jobs passed on that commit.** The
 suite was at 946 tests then, green locally on 3.11 and 3.13 and then on the
 runner. **Nothing went red that time** — the first release here that needed no
@@ -118,11 +118,13 @@ started", because the frozen document was left byte-identical; and the README's
 §6.4 does. §15.2's three tolerances (a missing final newline, trailing
 whitespace and `\r\n`, no size cap) remain pending.
 
-**Next: commit and push, CI on the actual commit, then the tag and the release —
-the same order as v0.5.1.** `docs/v0.5.2-import-design.md` is untracked and
-belongs in this commit (both READMEs link to it); `docs/pilot-kit/` is untracked
-and is *not* part of this unit — it is the understanding experiment's materials,
-for a separate commit or none.
+**Released, in the order the rule fixes:** `bcfea01` (the design freeze, the
+command, the tests, both READMEs, the CHANGELOG, and 0.5.2 in the six compared
+places — `docs/v0.5.2-import-design.md` included, because both READMEs link to
+it), then CI run `38141602485` green on all four jobs on that commit, then the
+annotated tag `v0.5.2` and the release. `docs/pilot-kit/` was deliberately left
+untracked: it is the understanding experiment's materials and not part of this
+unit.
 
 ## The second repository, the review, and the Memory block deferred, 2026-10-09
 
