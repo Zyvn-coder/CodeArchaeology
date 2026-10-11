@@ -1148,6 +1148,20 @@ Two things the audit is worth keeping for, beyond the twelve rows:
 
 ## Where the project stands
 
+**v0.5.3 is released, and v0.5.2 before it: the two patches that close the
+data-protection half of memory portability and then harden it.** v0.5.2 is
+`memory import` — the eighteenth command, the freeze in
+`docs/v0.5.2-import-design.md` (its §16 records the four decisions), the tests
+holding its §11 matrix, and the review that found eight defects in a suite that
+was already green (traps 45–50 below are what it paid for). v0.5.3 hardens one of
+them — a `since` commit that is not a sha can no longer produce a date, in
+`memory_checks.since_moment` and at the import boundary — decides the three reader
+tolerances §15.2 had left pending (they stay), and puts `docs/pilot-kit/` in the
+repository. The tree is at 1030 tests and the version is 0.5.3 in the six places
+that are compared; both tags are annotated on commits whose four CI jobs were
+green before the tag was placed. **The loop is closed: export and import work in
+both directions for one repository, so the file is a backup rather than a copy.**
+
 **v0.5.1 is released.** It is the first half of memory portability:
 `docs/v0.5-product-audit.md` is the audit that decided the route — it separated
 the *data-protection* half of the question, which does not depend on whether the
@@ -2329,6 +2343,71 @@ now says the limit is on language, not on when to start.
     change, or an explicit rename edge), and that is a design decision for the
     user, not something to slip into a later unit.
 
+45. **Python's `sqlite3` opens its implicit transaction only at the first DML.**
+    A `CREATE TABLE` executed before one is committed *outside* the transaction —
+    a `with connection:` block that creates a table and then raises leaves the
+    table behind, while an explicit `BEGIN` first rolls it back. `executescript`
+    commits the open transaction before it runs anything, and assigning
+    `isolation_level = None` commits whatever is open. Measured on 3.11.16,
+    3.12.14 and 3.13.5 (SQLite 3.49.1/3.53.1), which is why `write_import` issues
+    `BEGIN IMMEDIATE` itself, runs the schema statements one at a time inside it,
+    never touches `executescript`, and refuses a connection that already has a
+    transaction open instead of switching it to autocommit. **A transaction's
+    boundary is a fact about the driver, not about the `with` statement**, and
+    the only way to know is to measure it.
+
+46. **A naive timestamp has no epoch that means anything.** `int(dt.timestamp())`
+    reads the *local* clock for a naive value, so one stored string orders
+    differently on two machines; on Windows before 1970 it raises
+    `OSError: [Errno 22]` (`1970-01-01T00:00:00` is enough). Every moment this
+    tool writes is `datetime.now().astimezone().isoformat()`, so a naive spelling
+    is one the writer does not produce: the import reader refuses it, and
+    `_epoch_of` refuses one too rather than letting `mktime` decide. **An offset
+    is part of a stored time's spelling, not decoration.**
+
+47. **A lone surrogate is a string Python holds and SQLite refuses.** `json` reads
+    the escape `"\ud800"` back into a Python string that cannot be encoded as
+    UTF-8, and `sqlite3` raises `UnicodeEncodeError` when it binds one — a
+    traceback where a refusal sentence was promised. "Non-empty text" is not a
+    validation rule for a field that becomes a column; "text this format can
+    carry" is. Found by review, not by a test: no fixture could spell it.
+
+48. **A rule that says "in the file *or the store*" has to query the store for
+    the referenced ids, not only for the ids the file names.** The import's
+    closure check read the store's rows for the file's own ids, then refused a
+    file whose `superseded_by` named a successor the store already held — the very
+    case the design names ("a successor an earlier import wrote"). The fix is one
+    more id in the query; the test is the two-step import that produces it.
+
+49. **A rule can be in the file already and still be bypassed.**
+    `memory_checks._prefix` sits beside `since_moment` with the rule in its
+    docstring — a ref holding anything but sha characters must not reach
+    `find_commits`, whose value becomes a `LIKE` pattern — and `since_moment`
+    called `find_commits` directly, so a stored `"%"` matched *every* commit and
+    `memory list` showed a fabricated date. The acts resolve the commit before
+    they store it, so only a row written by hand or through the library could
+    carry one. **When a module has a guard helper, grep for the callers that do
+    not use it.**
+
+50. **A green suite covers the matrix, not the space.** The v0.5.2 review found
+    eight defects in a suite that was already green, and the method is what to
+    keep: three independent read-only readers, one module each, plus a re-read by
+    the implementer; every measured claim checked with an in-memory SQLite probe
+    instead of reasoned about; every finding confirmed before it was fixed (all
+    eight held). The questions that found them are the ones a matrix does not ask
+    — what can a crafted file make this code do, what does the driver actually do
+    here, and what does the design say in the one sentence the code does not
+    implement.
+
+51. **A count written into a release entry has to be measured at the release
+    commit.** v0.5.2's CHANGELOG entry says `tests/test_memory_import.py` holds
+    "fifty-five tests"; the file collected **76** at the release commit `bcfea01`
+    (46 test functions), because the review unit grew the file after the entry was
+    written and nothing re-read the number. The suite total in the release notes
+    is right because it was measured at the end. **A number in a durable record is
+    measured or it is wrong** — and the entry was corrected to seventy-six in the
+    commit that recorded this audit, which is what the audit was for.
+
 ## Environment notes
 
 - **Pushing works over SSH on port 443**, through a repository deploy key and the
@@ -2338,7 +2417,13 @@ now says the limit is on language, not on when to start.
   cross-version probe therefore *removes* the project's 3.13 environment and
   leaves a 3.11 one behind, until the next plain `uv run` puts it back. Nothing
   is lost and the reinstall takes under a second, but a session that checks
-  `sys.version` inside `.venv` afterwards will be surprised by it.
+  `sys.version` inside `.venv` afterwards will be surprised by it. `uv sync` puts
+  the 3.13 environment back directly.
+- **Two `uv run` processes at once break that shared `.venv`.** The failure reads
+  `failed to remove directory '.venv\Scripts': another program is using this
+  file`, and what it produces looks like a real regression rather than a broken
+  environment: one session saw 76 failures in `test_readme.py` this way, every one
+  of them the environment's fault. Run them one at a time.
 - **Git Bash's own `ssh` does not read `~/.ssh/config`** on this machine: it
   resolves the home directory through `getpwuid`, there is no `/etc/passwd`, and
   it ignores `HOME`. Git is therefore pointed at the native OpenSSH binary with
@@ -2358,6 +2443,13 @@ now says the limit is on language, not on when to start.
   repositories are rebuilt by `tests/sample_repo.py`. The quoted numbers are
   from CPython 3.13.5 on 2026-09-30, and Unit 11's implementation is wrong until
   it agrees with them or explains the difference.
+- **The delivery steps are the user's to name.** A unit ends with the work in the
+  working tree and its report; committing, pushing, tagging and releasing happen
+  when the user says so — every unit so far ended with an explicit "提交推送" or
+  "执行" — and an outward step (a tag, a release page, anything published) is
+  authorized per item rather than by the previous one. Pushes go over SSH (above),
+  and the GitHub token never goes through the `ghfast.top` proxy, which is
+  fetch-only and third-party.
 
 ## Next
 
@@ -2503,11 +2595,35 @@ now says the limit is on language, not on when to start.
       CI job (`cache.py`'s `darwin` branch has never executed on a runner) and the
       `--db` cross-repository semantics question, which must be answered **before**
       a full import is designed because import is what makes that state common.
+15. **v0.5.3 is released, and the data-protection loop is closed.** Export and
+    import both work, the format is frozen (`docs/v0.5.1-portability-design.md`),
+    the import's contract is frozen and built (`docs/v0.5.2-import-design.md`),
+    and the one boundary rule that had a symptom — a `since` commit read as a
+    `LIKE` prefix — is hardened in `memory_checks.since_moment` and at the import
+    boundary. What is next, in the order the v0.5.1 audit recommends:
+    - **The understanding pilot** (`docs/v0.5-understanding-experiment.md`, its
+      printable form in `docs/pilot-kit/`). This is the only item here an agent
+      cannot do: it needs six to eight people who did not write the tool, a date,
+      and a second scorer if the author is not to score alone. Its falsification
+      condition is stated in advance — if it shows no difference, the sharing half
+      is not worth building.
+    - **The two small real items** from item 14: the macOS CI job and the `--db`
+      cross-repository semantics question.
+    - **The three design gaps left open on purpose**, each with a stated
+      consequence and no defect behind it: `subject.commit` carries no shape check
+      (it is matched exactly, never as a prefix, so it has no symptom); the acts
+      strip the text they store where import stores the file's value verbatim; and
+      two rows may name one successor. The v0.5.3 section above says why each was
+      left alone.
+    - **The sharing half** — forks, merges, another repository's knowledge — stays
+      gated by the pilot, and the v0.5.1 audit's sentence still stands: if the
+      pilot shows no difference, the file already written is a backup format and
+      nothing more.
 
 ## How to verify
 
 ```console
-$ uv run pytest                 # 660 tests, on 3.13
+$ uv run pytest                 # 1030 tests at the v0.5.3 release, on 3.13
 $ uv run --python 3.11 pytest   # the same suite, on the declared floor
 $ uv run python benchmarks/benchmark.py --commits 10000 50000
 $ uv run python benchmarks/context_benchmark.py
@@ -2518,11 +2634,13 @@ $ gh run list --limit 1         # then gh run watch <id>
 A database written by an older schema version rebuilds itself on the next
 `analyze`; there is nothing to clean up by hand.
 
-A release is three things beyond the code: the version in the four places the
-suite compares, the roadmap row, and both READMEs. The READMEs' console blocks
-are replayed against the fixtures rather than trusted — 55 of them now, and every
-registered command is required to have a section — and the way to do that is in
-the decisions table above.
+A release is more than the code: the version in the places the suite compares
+(`pyproject.toml`, `__version__`, both READMEs' `archaeology X.Y.Z` line, and the
+CHANGELOG's newest heading), the CHANGELOG section itself, the roadmap row, both
+READMEs' status lines, and this file's head and standing paragraph. The READMEs'
+console blocks are replayed against the fixtures rather than trusted, and every
+registered command is required to have a section — the way to do that is in the
+decisions table above.
 
 **The order of a release is part of the release**: commit, push, wait for all four
 CI jobs on that commit, then tag, then the release page. `v0.3.0`'s tag had to be

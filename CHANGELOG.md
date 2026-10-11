@@ -66,7 +66,7 @@ a row that is already stored is never edited.
   file is never copied onto them. The honest limit is stated where it belongs: an
   assertion cannot tell a moved repository from a fork, and the preview that
   would warn before the write is not in this version.
-- **`tests/test_memory_import.py`** — fifty-five tests holding the design's §11
+- **`tests/test_memory_import.py`** — seventy-six tests holding the design's §11
   matrix. The three that carry the weight: the round trip is byte-identical
   (export → import → export); a no-op import leaves the database file's own
   sha256 unchanged, not merely every row; and a failure injected *by SQLite*
