@@ -14,8 +14,7 @@ Update it when a decision is made or a trap is found. Nothing else.
 `docs/v0.6-problem-definition.md` fixes the phase's question, its evidence
 boundary, its non-goals and the six decisions that are the user's — the reasons,
 and the four state facts the unit checked, are in the section below. Nothing was
-implemented and none of those decisions was taken. `b2fd3d8`'s audit record and
-the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
+implemented and none of those decisions was taken. The pilot is shelved by the user's ruling of 2026-10-24 and its v0.6 precondition is waived — a waiver, not a null result; the value claim stays UNKNOWN — so v0.6 now waits only on §11 rows 1–3. `b2fd3d8`'s audit record and the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -39,7 +38,8 @@ test of the product claim rather than the tool — is designed in
 level) carry their ground truth**, the materials are printable, and the decision
 rule is declared before any data exists. **It needs six to eight people and
 cannot be run by an agent — that and a date are now the whole blocker, because
-the question set is complete.** The second repository is prepared too —
+the question set is complete.** **Superseded 2026-10-24: the pilot is shelved by
+the user's decision — see the section below.** The second repository is prepared too —
 `python-tqdm/tqdm`, six more calibrated questions — and both documents passed an
 independent review on 2026-10-09 (**READY WITH DISCLOSED LIMITATIONS**, with the
 Memory block deferred by decision; that section is below). Preparing it was not free: the tool was pointed at a codebase with 11.7
@@ -67,6 +67,14 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The pilot is shelved, and the user waives its v0.6 precondition, 2026-10-24
+
+**What was decided, and by whom.** The user ruled on 2026-10-24 that the understanding pilot cannot be run — recruitment is the blocker and it does not resolve — and that it is shelved for now, not cancelled ("pilot 实现不了，先不做了"); and in the same ruling waived the pilot entry criterion for v0.6 (`docs/v0.6-problem-definition.md` §10.2 item 4, §11 row 4, both amended in place with dated notes). v0.6 may now proceed to its design freeze once §11 rows 1–3 are ruled — the deterministic evidence layer first.
+
+**The one line that must never blur:** a shelved pilot is **not a null result**. No session ran, no data exists, and the pre-registered rule (`docs/v0.5-understanding-experiment.md` §10) never fired and stays intact. The value claim remains **UNKNOWN** under the labels the problem definition already carries (§1.5). Nothing was softened; a precondition was waived by the one person entitled to waive it, with the audit's named cost accepted: the claim stays unverified (`docs/v0.5-product-audit.md` risks 1 and 3).
+
+**The waiver's scope is v0.6 only.** The memory sharing half (forks, merges, a full import), the cold-start question route and the AI second experiment were gated on the pilot's *result* and stay shelved with it; the `--db` semantics question stays moot for the same reason. The pilot kit and both experiment documents stay in the tree as preparation-not-run — if participants ever appear, the design is ready and its rule still governs, which is also why the record says shelved rather than cancelled.
 
 ## The v0.6 problem definition, and the state it was written in, 2026-10-24
 
