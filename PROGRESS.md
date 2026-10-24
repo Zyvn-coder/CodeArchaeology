@@ -10,8 +10,14 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-11. v0.5.3 is released: an annotated tag at `90b2c8a` with
-a GitHub Release, made after all four CI jobs passed on that commit.** The tree
+**Last updated: 2026-10-24. v0.6 has a problem definition and no code:
+`docs/v0.6-problem-definition.md` fixes the phase's question, its evidence
+boundary, its non-goals and the six decisions that are the user's — the reasons,
+and the four state facts the unit checked, are in the section below. Nothing was
+implemented and none of those decisions was taken. `b2fd3d8`'s audit record and
+the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
+at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
+commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
 green locally on 3.13 and 3.11 and then on the runner. The release carries the
 `since` hardening, the three §15.2 tolerances decided, and the pilot kit — the
@@ -61,6 +67,24 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The v0.6 problem definition, and the state it was written in, 2026-10-24
+
+**One document, no code, and the six questions it refuses to answer.** `docs/v0.6-problem-definition.md` is the first unit of v0.6 and it is paper: it fixes what the phase would ask (four questions that the roadmap's one phrase, "AI-assisted change analysis and replay", runs together), what evidence it may use, what is forbidden, what "the evidence is thin" means, whether a reading is ever stored, where the understanding experiment sits, what is not in the phase, the preconditions and the decisions. **Its whole value is that it decides nothing the user owns**: the unit of a change, whether the diff enters the bundle, whether an explanation is stored, whether the experiment gates the phase, whether the Memory layer is touched, and whether `confidence` is renamed are all listed as open, with recommendations that are marked as recommendations. The reason to write it now rather than when the phase starts is the project's own rule, followed four times: a phase begins with a freeze, and the audit sequenced this document second — after the pilot, before any v0.6 code (audit §10, §13 criterion 2). **The order is disclosed rather than glossed** (§10.5 of the document): the pilot is the audit's first recommendation and this document is its second, and the document was written while the pilot is unrun. Whether the sequence recommendation is a strict ordering constraint is a process interpretation, not a settled decision; what the entry criteria require is the pilot's recorded result and this document before the phase proceeds, and the pilot must be run and considered before any further building.
+
+**Why the phase's name needed pulling apart.** "Replay" appears once in the tree, in a roadmap row, and the audit's read is that one of its plausible meanings — simulating what a change would do — is not a deferred option but a **frozen prohibition** (prediction, `docs/v0.4-problem-definition.md` §6 and `docs/v0.4-evidence-contract.md` §9). Writing that down is the difference between a phase whose scope is unknown and one whose scope has an edge.
+
+**Four state facts the unit checked rather than assumed**, because each one is a precondition somewhere: `b2fd3d8` is **still unpushed** (`git ls-remote` returns `fdc6198` for `refs/heads/main`) and has never run through CI, so "clean and level with the origin" holds in one half only; CI is green on both the release commit `90b2c8a` and the release-recording commit `fdc6198`; **macOS is still untested** (the matrix is ubuntu/windows × 3.11/3.13) and the audit's recommendation of one macOS job is a recommendation, not one of its eight entry criteria; and **the experiment is still prepared and not run**, with the Memory sub-experiment deferred by the user's 2026-10-09 decision. The unit did not push — the task said to record the state, and pushing is the user's call.
+
+**Three things worth keeping, each of which cost time to find:**
+
+1. **The README replay tests only pass under the documented invocation.** `tests/test_readme.py` spawns `uv run archaeology …` from a temporary fixture directory, so it needs the environment a parent `uv run` provides. Running the suite with the venv's interpreter directly (`./.venv/Scripts/python.exe -m pytest`) fails **76** README blocks with `Failed to spawn: \`archaeology\`` while everything else passes — 954 passed, 76 failed — and `uv run pytest` is 1030 passed on the same tree. Both runs were made on 2026-10-24 **before** this documentation unit wrote anything: the unit itself ran no test, and the 1030 count is the v0.5.3 release record, not this unit's measurement. A red that means nothing is the worst kind; the invocation is part of the command.
+2. **The v0.6 preconditions existed in two different lists and still do.** `docs/v0.5-final-state.md` carries five items from the v0.5.0 release and `docs/v0.5-product-audit.md` §13 carries eight written later; they are not the same list and neither said it replaced the other. The new document merges them into one **candidate** list and separates the four unconditional items from the conditional and the later ones, so that a list cannot quietly promote `--db` semantics or a macOS job into a gate they were never given.
+3. **`docs/v0.5-final-state.md` is a v0.5.0 record, not a description of the tree.** It still says sixteen commands and "export/import is not here yet"; the tree has eighteen commands and both halves of portability. It is correct as a record and must not be "fixed" — the current state lives in the two READMEs, this file and the CHANGELOG.
+
+**One scoping fact that shapes v0.6's order and is easy to miss:** the experiment **excludes `explain` from the treatment by design** (`docs/v0.5-understanding-experiment.md` §6.3), because a result from *git plus a model* could not be attributed to this tool. So the pilot cannot speak to the AI layer at all, and whether a model's answer adds anything over the printed bundle is a **second experiment** the user has not decided on. That is the argument for putting the deterministic work first if the phase is approved.
+
+**What remains with the user:** the six decisions (§11 of the new document — the unit, the diff, persistence, the experiment's gating force, the Memory layer, `confidence`), the recruitment of six to eight people for the pilot, and whether to push `b2fd3d8`.
 
 ## The v0.5.3 hardening: the `since` rule, the tolerances decided, and the pilot kit, 2026-10-11
 
