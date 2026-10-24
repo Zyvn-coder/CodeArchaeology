@@ -66,6 +66,7 @@ import json
 from dataclasses import dataclass, replace
 
 from codearchaeology.context import CommitContext, build_object as context_object
+from codearchaeology.span import SpanContext, build_span_object as span_object
 
 # What each section of the model's view may hold. These are constants rather than
 # configuration on purpose: a selection that moved with a setting would make the
@@ -86,6 +87,15 @@ ABSENCES = 20
 HISTORY_WINDOW = 2
 MESSAGE_CHARACTERS = 4000
 
+# The one dimension a set adds: how many of the range's commits the model may
+# be shown. A constant for the same reason the six above are, and chosen the
+# same way — against measured ranges, not by taste: at 25 the ranges a real
+# review holds (ten to fifty commits over the large fixture's history) send
+# 16,000–23,000 estimated tokens, the order the widest single commit already
+# sends, while the two-hundred-commit monster range cuts a 2,057,000-token
+# bundle to 47,000.
+COMMITS = 25
+
 SELECTION_NOTE = (
     "this commit's evidence was too large to send whole, so each list below holds"
     " its largest entries; every count in this block is about the list it sits"
@@ -98,6 +108,20 @@ SELECTION_NOTE = (
 # has a way to check the answer against what it was not shown.
 LARGE_COMMIT_NOTE = (
     "The commit is large, so the model was shown {shown}."
+    " The evidence itself is not reduced: with no model configured, this command"
+    " prints all of it."
+)
+
+# The range's own pair of the two sentences above: the same promise in the words
+# of the unit that is actually being reduced.
+SPAN_SELECTION_NOTE = (
+    "this range's evidence was too large to send whole, so each list below holds"
+    " its largest entries; every count in this block is about the list it sits"
+    " under, and a file row carrying ranges_total holds only its first spans"
+)
+
+SPAN_LARGE_NOTE = (
+    "The range is large, so the model was shown {shown}."
     " The evidence itself is not reduced: with no model configured, this command"
     " prints all of it."
 )
@@ -278,7 +302,177 @@ def build_view(context: CommitContext) -> View:
             },
             "message": {
                 "characters_shown": len(message),
-                "characters_omitted": len(context.message) - len(message),
+                "characters_omitted": omitted_characters,
+            },
+        },
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SpanView:
+    """What the model is shown of a range, and what it was made from.
+
+    The mirror of :class:`View` for the second unit: ``bundle`` is the whole
+    set bundle, ``context`` the reduced one the model is sent, ``selection``
+    the counts of what the reduction dropped — ``None`` when nothing did, which
+    is the statement that the two are the same object.
+    """
+
+    bundle: SpanContext
+    context: SpanContext
+    selection: dict | None
+
+    @property
+    def object(self) -> dict:
+        """The view as the object the model is shown, with its own totals."""
+        found = span_object(self.context)
+        if self.selection is None:
+            return found
+
+        totals = {change.path: len(change.ranges) for change in self.bundle.changes}
+        for row in found["file_changes"]:
+            total = totals.get(row["path"], 0)
+            if total > len(row["ranges"]):
+                row["ranges_total"] = total
+        found["selection"] = self.selection
+        return found
+
+    @property
+    def json(self) -> str:
+        """The view as the bytes the model is sent — the bundle's own form."""
+        return json.dumps(self.object, indent=2, ensure_ascii=False)
+
+    @property
+    def note(self) -> str | None:
+        """What the model was shown, said to a reader, or ``None`` if it saw it all."""
+        if self.selection is None:
+            return None
+
+        shown: list[str] = []
+        commits = self.selection["commits"]
+        if commits["omitted"]:
+            shown.append(
+                f"the largest {commits['shown']} of"
+                f" {commits['shown'] + commits['omitted']} commits"
+            )
+        files = self.selection["file_changes"]
+        if files["omitted"]:
+            shown.append(
+                f"the largest {files['shown']} of {files['shown'] + files['omitted']}"
+                f" file changes, with each file's life and recent history"
+            )
+        for key, label in (("ast_changes", "AST changes"), ("absences", "absences")):
+            entry = self.selection[key]
+            if entry["omitted"]:
+                shown.append(
+                    f"{entry['shown']} of {entry['shown'] + entry['omitted']} {label}"
+                )
+        if self.selection["ranges"]["omitted"]:
+            shown.append(
+                f"{self.selection['ranges']['per_file']} of each file's changed spans"
+            )
+        if self.selection["message"]["characters_omitted"]:
+            shown.append("the first part of some commit messages")
+        if not shown:
+            shown.append("the largest entries of the lists that did not fit")
+        return SPAN_LARGE_NOTE.format(shown=", ".join(shown))
+
+
+def build_span_view(span: SpanContext) -> SpanView:
+    """Reduce the set bundle to what the model may see, and say what was left out.
+
+    Every rule is the commit view's own, re-cut for a set: the lists go set-wide,
+    the message cap stays per commit, and the one new dimension is the commits
+    themselves. The evidence stays the bundle either way.
+    """
+    commits, omitted_commits = _kept_commits(span)
+    changes, omitted_changes = _largest(
+        span.changes, _span_change_size, _span_change_order, FILE_CHANGES
+    )
+    changes, omitted_ranges = _fewer_spans(changes)
+    definitions, omitted_definitions = _largest(
+        span.definitions, _span_definition_size, _span_definition_order, DEFINITIONS
+    )
+    absences, omitted_absences = _head(span.absences, ABSENCES)
+    commits, omitted_message = _shorter_messages(commits)
+
+    paths = {change.path for change in changes}
+    lives, omitted_lives = _lives(span.lifecycle, paths)
+    names = {life.path for life in lives}
+    histories, omitted_histories = _histories(span.history, names)
+
+    omitted = (
+        omitted_commits,
+        omitted_changes,
+        omitted_definitions,
+        omitted_absences,
+        omitted_message,
+        omitted_ranges,
+        omitted_lives,
+        omitted_histories,
+    )
+    if not any(omitted):
+        # A range that fits is sent whole, like a commit that does: the view is
+        # the bundle object itself, and the two paths cannot drift.
+        return SpanView(bundle=span, context=span, selection=None)
+
+    histories = _narrowed(histories)
+
+    return SpanView(
+        bundle=span,
+        context=replace(
+            span,
+            commits=commits,
+            changes=changes,
+            lifecycle=lives,
+            definitions=definitions,
+            history=histories,
+            absences=absences,
+            bounds=_windowed(span.bounds, histories),
+        ),
+        selection={
+            "note": SPAN_SELECTION_NOTE,
+            "commits": {
+                "shown": len(commits),
+                "omitted": omitted_commits,
+            },
+            "file_changes": {
+                "shown": len(changes),
+                "omitted": len(span.changes) - len(changes),
+            },
+            "ranges": {
+                "shown": sum(len(change.ranges) for change in changes),
+                "omitted": omitted_ranges,
+                "per_file": RANGES_PER_FILE,
+            },
+            "diffs": {
+                "cut": sum(
+                    1
+                    for change in changes
+                    if change.diff is not None and change.diff.truncated
+                ),
+            },
+            "ast_changes": {
+                "shown": len(definitions),
+                "omitted": len(span.definitions) - len(definitions),
+            },
+            "lifecycle": {
+                "shown": len(lives),
+                "omitted": len(span.lifecycle) - len(lives),
+            },
+            "history": {
+                "shown": len(histories),
+                "omitted": len(span.history) - len(histories),
+            },
+            "absences": {
+                "shown": len(absences),
+                "omitted": len(span.absences) - len(absences),
+            },
+            "message": {
+                "characters_shown": sum(
+                    len(commit.message) for commit in commits
+                ),
+                "characters_omitted": omitted_message,
             },
         },
     )
@@ -423,4 +617,81 @@ def _definition_size(definition) -> int:
 
 
 def _definition_order(definition):
+    return (definition.path, definition.qualname, definition.occurrence)
+
+
+# Choosing what to keep, for a set.
+
+
+def _kept_commits(span: SpanContext):
+    """The largest few commits of the range, kept in the bundle's own order.
+
+    Which commits stay is a fact about the rows — the lines their file changes
+    sum to, ties by sha — but the order they appear in stays the graph's,
+    because the prompt promises the model oldest first and a view that
+    scrambled the spine would break its own rule. Files may be re-ordered by
+    size; a story may not be re-ordered at all.
+    """
+    if len(span.commits) <= COMMITS:
+        return span.commits, 0
+    sizes = _commit_sizes(span)
+    ranked = sorted(span.commits, key=lambda commit: (-sizes[commit.sha], commit.sha))
+    keep = {commit.sha for commit in ranked[:COMMITS]}
+    return (
+        tuple(commit for commit in span.commits if commit.sha in keep),
+        len(span.commits) - COMMITS,
+    )
+
+
+def _commit_sizes(span: SpanContext) -> dict[str, int]:
+    """How many lines each commit of the range moved, summed from its rows."""
+    sizes: dict[str, int] = {}
+    for change in span.changes:
+        for occurrence in change.occurrences:
+            moved = (occurrence.added_lines or 0) + (occurrence.deleted_lines or 0)
+            sizes[occurrence.commit_sha] = sizes.get(occurrence.commit_sha, 0) + moved
+    return sizes
+
+
+def _shorter_messages(commits):
+    """Each kept commit's message, cut at the ceiling the commit view uses.
+
+    Per commit rather than across the set: how many messages there are is the
+    commits cap's business, and one ceiling per message is the same rule the
+    commit view applies to the one message it holds.
+    """
+    kept, omitted = [], 0
+    for commit in commits:
+        if len(commit.message) <= MESSAGE_CHARACTERS:
+            kept.append(commit)
+            continue
+        omitted += len(commit.message) - MESSAGE_CHARACTERS
+        kept.append(replace(commit, message=commit.message[:MESSAGE_CHARACTERS]))
+    return tuple(kept), omitted
+
+
+def _span_change_size(change) -> int:
+    """How many lines the whole set moved in this file — a sum, stated as one."""
+    return change.added_lines + change.deleted_lines
+
+
+def _span_change_order(change) -> str:
+    return change.path
+
+
+def _span_definition_size(definition) -> int:
+    """The lines the definition spans, at the last event that still had a place.
+
+    The same measure the commit view uses — the definition's span, not the
+    change inside it — read at the definition's most recent known position,
+    because a group is one life and its size is where it last stood.
+    """
+    for event in reversed(definition.events):
+        if event.lineno is not None:
+            end = event.end_lineno if event.end_lineno is not None else event.lineno
+            return max(0, end - event.lineno + 1)
+    return 0
+
+
+def _span_definition_order(definition):
     return (definition.path, definition.qualname, definition.occurrence)

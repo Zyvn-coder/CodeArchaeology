@@ -10,17 +10,16 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has two units of code. Unit 1, the diff
-reader, is landed: `12e0e42` on `origin/main`, all four CI jobs green. Unit 2,
-the set bundle, is built and green at **1057 tests** under `uv run pytest`:
-`span.py` resolves a range to two full shas, orders it by the commit graph,
-gives each path one row with its occurrences and the net status, aggregates
-definitions with their presence at both endpoints, and carries the range's
-three new absences; `INSTRUCTIONS` gained rules 11–12 and the `changeset`
-citation kind, which the memory layer deliberately does not take — row 5's
-no-new-touches, held by two rewritten tests. Unit 2 sits uncommitted for
-review; units 3–6 of the freeze wait on the user's word. The pilot stays
-shelved — a waiver, not a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has three units. The diff reader and the set
+bundle are landed — `12e0e42` and `3625cac` on `origin/main`, all four CI jobs
+green on each — and the set's selection (Unit 3) is built and green at **1067
+tests** under `uv run pytest`: `COMMITS = 25`, set against measured ranges
+(ten-to-fifty-commit ranges send 16,000–23,000 estimated tokens; a
+two-hundred-commit monster cuts a 2,057,000-token bundle to 47,000), the commit
+list keeps the graph's order while every other list ranks by size, and every
+dropped thing is counted. Unit 3 sits uncommitted for review; units 4–6 wait
+on the user's word. The pilot stays shelved — a waiver, not a null result; the
+value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -73,6 +72,16 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.6 Unit 3: the selection for a set, 2026-10-24
+
+**What was built.** `selection.py` gained `SpanView` and `build_span_view`: every rule of the commit view re-cut for a set, plus the one dimension a set adds. `COMMITS = 25` caps the commit list; the file, definition, span, absence and message rules carry over set-wide (the message ceiling stays per commit — how many messages there are is the commits cap's business); the history window narrows the same way; `ranges_total` and the `diffs: {cut}` count ride the span's own rows. The note names the unit ("The range is large…"), and a range that fits is sent whole — `view.json` is the bundle's own bytes, held by a test.
+
+**The one rule where the set refuses to copy the commit view, and why.** Which commits stay is largest-by-rows (lines summed from their occurrences, ties by sha), but the order they appear in stays the graph's. The commit view re-orders the files it keeps — a list of things is rankable — but the commit list is the story's spine, and the prompt's rule 11 promises the model oldest first; a view that scrambled it would break its own instruction. The design's §4 named the largest-rows rule without naming the order; rule 11 had already settled it.
+
+**The value and its measurement.** `COMMITS = 25`, measured over generated ranges: the large fixture's last ten/twenty-five/fifty commits send 15,800 / 22,400 / 22,400 estimated tokens (the cap engages at fifty and the view stops growing), the last hundred sends 31,900, and the benchmark's everything shape as a two-hundred-commit range cuts a 2,057,000-token bundle to 46,700. Realistic ranges land in the order the widest single commit already sends; the monster is cut to a hundredth and the refusal handles the rest.
+
+**A property worth knowing, discovered by the fixture rather than designed.** The spans are counted at `--unified=0` and the text is carried at `--unified=3`, so one file can hold eight counted spans and print as a single hunk — the two invocations are different objects on purpose (the spans say where, the text says what), and a fixture with eight isolated two-line-gap edits makes the difference visible. Recorded so nobody "fixes" the discrepancy by unifying the flags.
 
 ## v0.6 Unit 2: the set bundle, 2026-10-24
 
