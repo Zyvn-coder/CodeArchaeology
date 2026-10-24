@@ -98,6 +98,20 @@ def read_commits(repo, revision: str = "HEAD") -> list[Commit]:
     return parse_commits(_run_git(repo, *LOG_ARGUMENTS, revision))
 
 
+def read_commits_between(repo, base: str, tip: str) -> list[Commit]:
+    """Return the commits of ``base..tip``, oldest first, parents before children.
+
+    ``--topo-order`` makes the sequence a function of the commit graph rather
+    than of timestamps — two commits can share a second, and an order that broke
+    the tie by the clock would be an order the repository never asserted.
+    ``--reverse`` turns git's newest-first into the order the events happened
+    in, which is the order a range is read in.
+    """
+    return parse_commits(
+        _run_git(repo, *LOG_ARGUMENTS, "--topo-order", "--reverse", f"{base}..{tip}")
+    )
+
+
 def parse_commits(output: bytes) -> list[Commit]:
     """Turn the output of the ``git log`` call above into :class:`Commit`s."""
     text = output.decode("utf-8", errors="surrogateescape")

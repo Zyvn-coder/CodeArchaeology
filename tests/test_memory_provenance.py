@@ -184,7 +184,11 @@ def test_the_only_edge_between_two_memories_is_the_lifecycle_one(
 
     assert [(row["table"], row["from"]) for row in links] == [("memories", "superseded_by")]
     assert [(row["table"], row["from"]) for row in owners] == [("memories", "memory_id")]
-    assert CITATION_KINDS == EVIDENCE_KINDS
+    # The evidence vocabulary gained the range unit's kind in v0.6; the memory
+    # layer's share of it deliberately did not — the ruling is no new touches.
+    assert CITATION_KINDS == tuple(
+        kind for kind in EVIDENCE_KINDS if kind != "changeset"
+    )
     assert "memory" not in CITATION_KINDS
 
 

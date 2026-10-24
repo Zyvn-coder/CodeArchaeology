@@ -41,6 +41,7 @@ import re
 from codearchaeology.context import CommitContext
 from codearchaeology.explanation import (
     ABSENCE,
+    CHANGESET,
     COCHANGE,
     COMMIT,
     DEFINITION,
@@ -320,6 +321,10 @@ def _known(context: CommitContext) -> dict[str, set[str]]:
         RANGE: ranges,
         COCHANGE: cochanges,
         ABSENCE: {absence.kind for absence in context.absences},
+        # A single commit is not a range, so there is no changeset to cite:
+        # the kind is legal and the citation is refused for naming nothing,
+        # which is the honest answer rather than a crash on a missing key.
+        CHANGESET: set(),
     }
 
 

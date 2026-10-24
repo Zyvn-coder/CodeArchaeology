@@ -254,6 +254,10 @@ class DefinitionContext:
     ones where it is not: one file can define the same name twice, and without it
     the two entries would be two records nothing could tell apart.
 
+    ``commit_sha`` is the commit the event happened at. For one commit's bundle
+    it is the context's own sha and reads redundant; for a range's it is the
+    only place an event says when it happened, and one object serves both.
+
     ``previous_commit_sha`` is the version this one was compared against — the
     nearest earlier version of the file that could be read. ``blind_spots`` are
     the unreadable versions in between, which is why an event that spans one
@@ -261,6 +265,7 @@ class DefinitionContext:
     """
 
     change: str
+    commit_sha: str
     path: str
     kind: str
     qualname: str
@@ -403,7 +408,7 @@ def build_context(repository_root, database, sha: str) -> CommitContext:
         message=commit.message,
         is_merge=commit.is_merge,
         changes=_changes(commit, ranges, diffs),
-        lifecycle=_lifecycle(lives, commit),
+        lifecycle=lifecycle_contexts(lives),
         definitions=_definitions(histories, commit),
         cochange=_cochange(commits, ranked),
         history=history,
@@ -477,6 +482,7 @@ def build_object(context: CommitContext) -> dict:
         "ast_changes": [
             {
                 "change": definition.change,
+                "commit_sha": definition.commit_sha,
                 "path": definition.path,
                 "kind": definition.kind,
                 "qualname": definition.qualname,
@@ -638,7 +644,15 @@ def _change(
     )
 
 
-def _lifecycle(lives: Iterable[Lifecycle], commit: Commit) -> tuple[LifecycleContext, ...]:
+def lifecycle_contexts(
+    lives: Iterable[Lifecycle],
+) -> tuple[LifecycleContext, ...]:
+    """Each touched life summarised, for whichever unit is being built.
+
+    Public because the range bundle summarises the same lives through the same
+    walk — one implementation, so a summary cannot mean one thing for a commit
+    and another for a range.
+    """
     contexts = []
     for life in lives:
         statistics = summarize(life)
@@ -668,7 +682,17 @@ def _lifecycle(lives: Iterable[Lifecycle], commit: Commit) -> tuple[LifecycleCon
 def _definitions(
     histories: Iterable[FileHistory], commit: Commit
 ) -> tuple[DefinitionContext, ...]:
-    """The definitions this commit created, modified or ended.
+    return definition_events(histories, (commit.sha,))
+
+
+def definition_events(
+    histories: Iterable[FileHistory], shas: Iterable[str]
+) -> tuple[DefinitionContext, ...]:
+    """The definition events at any of the given commits, in the walk's order.
+
+    The one collector both units share: a commit asks for its own sha and a
+    range for the whole set, and the events come back in the order the lives
+    were walked — which is the order they happened in.
 
     Deletions are here rather than in the absences: a definition that is gone is
     derived from a row that is missing, and the derivation is the finding.
@@ -678,11 +702,12 @@ def _definitions(
     has no row of its own to read them from — while the life knows both for as
     long as it lasts.
     """
+    wanted = frozenset(shas)
     found: list[DefinitionContext] = []
     for history in histories:
         for life in history.lives:
             for event in life.events:
-                if event.commit_sha == commit.sha:
+                if event.commit_sha in wanted:
                     found.append(_definition(life, event))
     return tuple(found)
 
@@ -690,6 +715,7 @@ def _definitions(
 def _definition(life: DefinitionLife, event: DefinitionEvent) -> DefinitionContext:
     return DefinitionContext(
         change=event.change,
+        commit_sha=event.commit_sha,
         path=event.path,
         kind=life.kind,
         qualname=life.qualname,
@@ -722,6 +748,18 @@ def _ranked(lives: Iterable[Lifecycle]) -> tuple[tuple[Lifecycle, int], ...]:
     long_enough = [pair for pair in counted if pair[1] >= DEFAULT_MIN_SHARED]
     long_enough.sort(key=lambda pair: (-pair[1], pair[0].current_path))
     return tuple(long_enough)
+
+
+def cochange_contexts(
+    commits: Iterable[Commit], lives: Iterable[Lifecycle]
+) -> tuple[CoChangeContext, ...]:
+    """What usually changes with these files, for whichever unit is being built.
+
+    Public for the same reason :func:`lifecycle_contexts` is: the range bundle
+    asks the same question of the same whole lives, and one implementation is
+    the only way the answer stays one answer.
+    """
+    return _cochange(commits, _ranked(lives))
 
 
 def _cochange(
@@ -964,8 +1002,39 @@ def _diff_texts(repository_root, commit: Commit) -> dict[str, DiffText] | None:
     if commit.is_merge:
         return None
     base = commit.parents[0] if commit.parents else EMPTY_TREE
-    return _diffs_by_path(
-        _run_git(repository_root, *DIFF_ARGUMENTS, base, commit.sha)
+    return diff_texts_between(repository_root, base, commit.sha)
+
+
+def diff_texts_between(repository_root, base: str, tip: str) -> dict[str, DiffText]:
+    """Each file's patch for an explicit pair of endpoints, bounded per file.
+
+    The one reader both units share: a commit is its parent and it, and a range
+    is its resolved base and tip — the same invocation, the same pinned flags,
+    the same per-file ceiling, so the diff of a one-commit range and the diff of
+    that commit are the same bytes.
+    """
+    return _diffs_by_path(_run_git(repository_root, *DIFF_ARGUMENTS, base, tip))
+
+
+# The span reader's twin, at git's own default context width of zero: the hunk
+# headers only, which is all a span needs to say where the net change landed.
+SPAN_RANGE_ARGUMENTS = (
+    "--no-pager",
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "--unified=0",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--find-renames=50%",
+)
+
+
+def diff_ranges_between(repository_root, base: str, tip: str):
+    """Where each file's change landed between two endpoints, new side only."""
+    return _ranges_by_path(
+        _run_git(repository_root, *SPAN_RANGE_ARGUMENTS, base, tip)
     )
 
 

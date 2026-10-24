@@ -46,15 +46,20 @@ DEFINITION = "definition"
 RANGE = "range"
 COCHANGE = "cochange"
 ABSENCE = "absence"
+# v0.6's range unit. It is not called ``range`` because that kind has meant a
+# changed span in one file since this schema was written, and one word holding
+# two meanings is the ambiguity the validator exists to refuse.
+CHANGESET = "changeset"
 
-EVIDENCE_KINDS = (COMMIT, FILE, DEFINITION, RANGE, COCHANGE, ABSENCE)
+EVIDENCE_KINDS = (COMMIT, FILE, DEFINITION, RANGE, COCHANGE, ABSENCE, CHANGESET)
 
-# How the two kinds that are not a single name are written, so that a citation
+# How the three kinds that are not a single name are written, so that a citation
 # can be copied exactly and checked against the bundle rather than parsed.
 # ``range`` is a changed span in a file and ``cochange`` is one direction of a
 # co-change pair — the direction matters, because the statistic is not symmetric.
 RANGE_FORM = "<path>:<start>-<end>"
 COCHANGE_FORM = "<path> -> <partner>"
+CHANGESET_FORM = "<base>..<tip>"
 
 # The absences the evidence contract names — four from v0.4, the binary one the
 # contract's v0.6 amendment adds — under the context builder's names, plus the
@@ -140,6 +145,17 @@ Rules, and an answer that breaks one is rejected rather than corrected:
     that is not in the section you were shown is a rejected answer. `related_memory`
     may be empty, and it must be empty when nothing in the section bears on this
     commit.
+11. The evidence may be for one commit or for a range of commits, and it says
+    which under `commit` or `range`. In a range the commits are listed oldest
+    first; a path may appear under several commits and its row is the whole of
+    what the set did to it; and each file's `diff` is the net diff of the range
+    — what the whole change did between its two endpoints. A path the set
+    touched that the net diff holds nothing for carries one of the named
+    absences saying why. Never read a range as one commit, and never present
+    "these commits form one change" as anything but a candidate reason.
+12. A `diff` whose row says `truncated` holds only the first part of its text,
+    and `characters_total` says the whole size. Never treat a bounded diff as
+    the whole one, and never make a claim about the lines that were cut.
 
 Answer with this shape:
 
@@ -173,6 +189,7 @@ Answer with this shape:
 The forms a `ref` takes, one per kind:
 
   commit      a commit sha, as written below (a prefix of one is accepted)
+  changeset   a revision range, written `<base>..<tip>`, as the `range` section names it
   file        a path, as written below
   definition  a qualified name, as written below
   range       a changed span, written `<path>:<start>-<end>`

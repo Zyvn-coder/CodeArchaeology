@@ -193,8 +193,16 @@ def test_the_subject_kinds_are_the_four_the_schema_has(
 
 
 def test_the_citation_kinds_are_the_evidence_kinds(database: sqlite3.Connection) -> None:
-    """One vocabulary for the whole tool, held by a test rather than by a copy."""
-    assert CITATION_KINDS == EVIDENCE_KINDS
+    """One vocabulary for the whole tool, minus the one kind memory may not take.
+
+    ``changeset`` names the range unit, and the range unit does not reach the
+    memory layer: v0.6's ruling is that memory is touched nowhere new, so a
+    citation cannot name a changeset until a later phase argues for it — the
+    vocabulary fork is deliberate, and this is where it is held.
+    """
+    assert CITATION_KINDS == tuple(
+        kind for kind in EVIDENCE_KINDS if kind != "changeset"
+    )
 
 
 def test_the_schema_refuses_a_definition_subject_without_a_path(

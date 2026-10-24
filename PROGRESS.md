@@ -10,16 +10,17 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has its first code: Unit 1 of the design freeze,
-the diff reader. The patch text enters the single-commit bundle as bounded text
-(`DIFF_CHARACTERS = 4000`, set against measurement), `binary_no_text` joins the
-absence vocabulary in step with the validator's, the selection block counts the
-rows that arrived cut, and the suite is at **1037 tests green** under
-`uv run pytest` — the only invocation the README replay tests accept. The two
-places the building corrected the freeze's letter are recorded in the section
-below, with the reasons. Units 2–6 of the freeze wait on the user's word. The
-pilot stays shelved — a waiver, not a null result; the value claim stays
-UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has two units of code. Unit 1, the diff
+reader, is landed: `12e0e42` on `origin/main`, all four CI jobs green. Unit 2,
+the set bundle, is built and green at **1057 tests** under `uv run pytest`:
+`span.py` resolves a range to two full shas, orders it by the commit graph,
+gives each path one row with its occurrences and the net status, aggregates
+definitions with their presence at both endpoints, and carries the range's
+three new absences; `INSTRUCTIONS` gained rules 11–12 and the `changeset`
+citation kind, which the memory layer deliberately does not take — row 5's
+no-new-touches, held by two rewritten tests. Unit 2 sits uncommitted for
+review; units 3–6 of the freeze wait on the user's word. The pilot stays
+shelved — a waiver, not a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -72,6 +73,20 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.6 Unit 2: the set bundle, 2026-10-24
+
+**What was built.** `src/codearchaeology/span.py`: `resolve_range` (both sides to full shas, git's own refusal with the rev named), `build_span` (the set bundle), and the object/JSON builders. The commits come from one `git log --topo-order --reverse base..tip` call through `history.py`'s own parser — metadata and per-commit file rows included, so an un-analyzed commit is as present as an analyzed one, marked `analyzed: false` and named by a `not_analyzed` absence. Paths are one row each: occurrences in the bundle's order, the net status from `git diff --raw` (status, both blobs), the net diff's spans and bounded text from the same readers the commit bundle uses. Definitions group by (path, qualname, occurrence) with presence at both endpoints. Lifecycle is each life truncated at its last in-range event; the history window is the life before the range first touched it; co-change runs over the whole lives, semantics unchanged. `context.py` promoted four helpers to public (`diff_texts_between`, `diff_ranges_between`, `lifecycle_contexts`, `cochange_contexts`, `definition_events`) so the two units share one implementation, and `DefinitionContext` gained `commit_sha` — redundant for one commit, the only place an event says when it happened for a set.
+
+**The vocabulary fork, deliberate and held by a test.** `EVIDENCE_KINDS` gained `changeset`; `CITATION_KINDS` did not, because row 5 rules the Memory layer untouched in v0.6 — a memory cannot cite a changeset until a later phase argues for it. The two tests that pinned `CITATION_KINDS == EVIDENCE_KINDS` now pin the fork itself ("the evidence kinds minus the range unit's"), each with the reason in its docstring, so the divergence is a named decision rather than a drift.
+
+**Three traps the building found, each recorded with its fix:**
+
+1. **A per-path `git diff` invocation destroys rename detection** — detection needs both names inside the diff, so `git diff base tip -- new.py` prints a birth where the whole diff prints a move. The unit-1 test helper therefore cannot byte-check a renamed path; the span test checks bytes on a one-named path and the rename lines themselves on the moved one. Any future "just ask git for one file's diff" shortcut has this waiting in it.
+2. **`git rev-parse --verify` refuses without naming the revision** ("Needed a single revision"), and a reader has to know which side of the range failed. `_resolve` wraps it: the rev, then git's words.
+3. **`unchanged` definitions produce no events** — a pure rename contributes nothing to `ast_changes`, in a set exactly as in a commit, which is why the fixture's rename commit shows zero definition events. The rule is the AST layer's own; recorded here because a set makes it visible.
+
+**Three readings of the freeze's letter, taken and disclosed:** the lifecycle summary describes the file as the range leaves it (truncated at the last in-range event), not as the repository's later history renames it into; the co-change rows keep the whole-life current name, which can be newer than the range knew ("semantics unchanged" taken literally); and `presence_base` is `absent` exactly when the first in-range event is a creation, with the blind-spot nuance riding the events it always rode. Each is one sentence in `span.py`'s docstrings where it is decided.
 
 ## v0.6 Unit 1: the diff reader, 2026-10-24
 
