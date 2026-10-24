@@ -167,7 +167,10 @@ def _reading_commands(repository: Path, database: Path) -> dict[str, tuple]:
         ),
         "explain": (
             ("explain", head, "--json"),
-            {"commit", "state", "explanation", "evidence", "memory"},
+            # `bundle_sha256` is v0.6's one envelope addition: the hash of the
+            # evidence object under it, so an answer's input can be compared
+            # against a stored run row without a second call.
+            {"commit", "state", "explanation", "evidence", "memory", "bundle_sha256"},
         ),
         "memory list": (
             ("memory", "list", "--json"),
@@ -177,7 +180,7 @@ def _reading_commands(repository: Path, database: Path) -> dict[str, tuple]:
         # absent when nothing is related, which the next test holds.
         "explain (nothing related)": (
             ("explain", merge, "--json"),
-            {"commit", "state", "explanation", "evidence"},
+            {"commit", "state", "explanation", "evidence", "bundle_sha256"},
         ),
     }
 

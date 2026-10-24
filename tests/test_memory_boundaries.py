@@ -760,7 +760,14 @@ def test_the_json_keeps_the_three_in_separate_keys(analyzed) -> None:
 
     assert result.exit_code == 0, result.stderr
     document = json.loads(result.stdout)
-    assert set(document) == {"commit", "state", "explanation", "evidence", "memory"}
+    assert set(document) == {
+        "commit",
+        "state",
+        "explanation",
+        "evidence",
+        "memory",
+        "bundle_sha256",
+    }
     assert "explanation" in document and document["explanation"] is not None
 
     found = _paths_of(document, memory_id)

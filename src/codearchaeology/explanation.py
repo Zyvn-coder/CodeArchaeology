@@ -27,6 +27,7 @@ The types below are the schema itself. ``validation`` fills them in from the
 model's text; this module never reads that text.
 """
 
+import hashlib
 import json
 from dataclasses import dataclass
 
@@ -300,6 +301,22 @@ EXPLAINED = "explained"
 EVIDENCE_ONLY = "evidence_only"
 
 
+def bundle_sha256(bundle: dict) -> str:
+    """The evidence object's own hash, over its canonical serialisation.
+
+    Sorted keys and no padding, so the hash is a function of the object alone
+    and not of the order a reader happened to build it in — which is what makes
+    "was this explanation produced from the bundle I have now?" a comparison of
+    two facts rather than of two printings. The same unit and the same database
+    give the same hash, run after run; a different hash means the evidence
+    moved.
+    """
+    canonical = json.dumps(
+        bundle, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def build_object(
     explanation: "Explanation | None",
     context,
@@ -329,6 +346,10 @@ def build_object(
     **absent when there is nothing to show**, which is the rule ``selection``
     already follows — an absent key is a statement, and its absence says this
     commit's files carry no stored memory.
+
+    ``bundle_sha256`` is the fourth thing and always present: the hash of the
+    evidence object under it, so a program holding an answer can compare its
+    input against a stored run row without a second command.
     """
     found = {
         "commit": context.sha,
@@ -340,6 +361,7 @@ def build_object(
         found["selection"] = selection
     if memory is not None:
         found["memory"] = memory
+    found["bundle_sha256"] = bundle_sha256(found["evidence"])
     return found
 
 
@@ -356,6 +378,50 @@ def build_json(
     """
     return json.dumps(
         build_object(explanation, context, selection, memory),
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
+def build_span_envelope(
+    explanation: "Explanation | None",
+    span,
+    selection: dict | None = None,
+    memory: dict | None = None,
+) -> dict:
+    """The range's envelope: the one shape, with ``range`` naming the unit.
+
+    Every key means what it means for a commit — one shape, ``state`` saying
+    which answer it holds, the evidence whole beside it — except the first,
+    because a range is not a commit and the key that names the unit must not
+    say it is one. ``range`` holds ``<base>..<tip>`` with both shas resolved,
+    the same form a ``changeset`` citation takes.
+    """
+    from codearchaeology.span import build_span_object as span_object
+
+    found = {
+        "range": f"{span.base}..{span.tip}",
+        "state": EXPLAINED if explanation is not None else EVIDENCE_ONLY,
+        "explanation": None if explanation is None else _explanation_object(explanation),
+        "evidence": span_object(span),
+    }
+    if selection is not None:
+        found["selection"] = selection
+    if memory is not None:
+        found["memory"] = memory
+    found["bundle_sha256"] = bundle_sha256(found["evidence"])
+    return found
+
+
+def build_span_envelope_json(
+    explanation: "Explanation | None",
+    span,
+    selection: dict | None = None,
+    memory: dict | None = None,
+) -> str:
+    """The range's envelope as JSON — stdout for a program, notes elsewhere."""
+    return json.dumps(
+        build_span_envelope(explanation, span, selection, memory),
         indent=2,
         ensure_ascii=False,
     )

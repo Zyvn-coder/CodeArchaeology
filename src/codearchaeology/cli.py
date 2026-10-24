@@ -14,7 +14,9 @@ something the tool did not write, which is why it refuses an existing path
 unless told to.
 """
 
+import json
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -44,9 +46,10 @@ from codearchaeology.cochange import load_cochange_commits
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
 from codearchaeology.context import build_context
 from codearchaeology.context import build_json as build_context_json
-from codearchaeology.definition_history import load_histories
 from codearchaeology.explanation import build_json as build_explanation_json
 from codearchaeology.explanation import build_prompt, render
+from codearchaeology.explanation import build_span_envelope_json
+from codearchaeology.definition_history import load_histories
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
 from codearchaeology.formatting import SHORT_SHA_LENGTH
@@ -119,7 +122,14 @@ from codearchaeology.provider import (
     ProviderError,
     Settings,
 )
-from codearchaeology.selection import build_view
+from codearchaeology.selection import build_span_view, build_view
+from codearchaeology.span import (
+    EmptyRangeError,
+    InvalidRangeError,
+    build_span,
+    build_span_object,
+    resolve_range,
+)
 from codearchaeology.structure import (
     build_history,
     build_history_json,
@@ -729,53 +739,127 @@ NO_PROVIDER_NOTE = (
     f" Set {BASE_URL_VARIABLE} and {MODEL_VARIABLE} to have one explained."
 )
 
+NO_MODEL_NOTE = (
+    "--no-model was given, so this is the evidence itself;"
+    " leave the flag off to have a model explain it."
+)
+
 
 @app.command()
 def explain(
-    sha: str = typer.Argument(..., help="Commit to explain. A prefix is enough."),
+    revision: str = typer.Argument(
+        ...,
+        help="The change to explain: a commit (a prefix is enough) or a"
+        " revision range written <base>..<tip>.",
+    ),
     path: Path = REPOSITORY_ARGUMENT,
     database: Path | None = DATABASE_OPTION,
     as_json: bool = typer.Option(
         False, "--json", help="Print JSON instead of the block."
     ),
+    no_model: bool = typer.Option(
+        False,
+        "--no-model",
+        help="Print the evidence alone, even with a model configured.",
+    ),
 ) -> None:
-    """Explain what one commit did, from the evidence the tool holds.
+    """Explain what one change did, from the evidence the tool holds.
 
-    The answer is an interpretation of that evidence and never a record of what
-    happened: every claim carries the citations it rests on, the citations are
-    checked against the bundle, and the block opens by saying so. With no model
-    configured the evidence itself is printed instead, which is the same bundle
-    the model would have been shown.
+    The unit is a commit or a revision range, and the answer is an
+    interpretation of the evidence and never a record of what happened: every
+    claim carries the citations it rests on, the citations are checked against
+    the bundle, and the block opens by saying so. With no model configured —
+    or --no-model — the evidence itself is printed instead, which is the same
+    bundle the model would have been shown.
     """
+    if ".." in revision:
+        _explain_range(revision, path, database, as_json, no_model)
+    else:
+        _explain_commit(revision, path, database, as_json, no_model)
+
+
+def _explain_commit(revision, path, database, as_json, no_model) -> None:
+    """The first unit: one commit, through the three paths a unit has."""
     try:
         repository_root, database = _repository_and_database(path, database)
-        context = build_context(repository_root, database, sha)
+        context = build_context(repository_root, database, revision)
     except (GitError, AnalysisError, CommitNotFound) as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1)
 
     _warn_if_behind(repository_root, database)
-    section = _memory_section(repository_root, database, context)
+    _run_explain(
+        lambda: build_view(context),
+        lambda section: context_json(context, section),
+        lambda explanation, selection, memory: build_explanation_json(
+            explanation, context, selection, memory
+        ),
+        _memory_section(repository_root, database, context),
+        as_json,
+        no_model,
+    )
 
+
+def _explain_range(revision, path, database, as_json, no_model) -> None:
+    """The second unit: a revision range, through the same three paths.
+
+    The frozen rule allows no fourth path — the offline print, ``--json`` and
+    the model all carry the set bundle — and the selector is explicit: both
+    sides are resolved to full shas here, and a ref that has moved since is a
+    different set, honestly so.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+        base, tip = resolve_range(repository_root, revision)
+        span = build_span(repository_root, database, base, tip)
+    except (
+        GitError,
+        AnalysisError,
+        EmptyRangeError,
+        InvalidRangeError,
+    ) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_behind(repository_root, database)
+    _run_explain(
+        lambda: build_span_view(span),
+        lambda section: _span_context_json(span, section),
+        lambda explanation, selection, memory: build_span_envelope_json(
+            explanation, span, selection, memory
+        ),
+        _memory_section(repository_root, database, _memories_of(span)),
+        as_json,
+        no_model,
+    )
+
+
+def _run_explain(view_of, offline_text, envelope_json, section, as_json, no_model) -> None:
+    """The half of the command a unit does not change: reaching a model or not.
+
+    Every unit differs only in what it builds; how the answer is obtained,
+    checked and emitted is one implementation, because two copies of the
+    retry-once rule or the offline note would be two places that can disagree.
+    """
     settings = Settings.from_environment()
 
-    if settings is None:
-        # Core First: with no model the evidence is still the answer, and the
-        # command still succeeds. The note goes to stderr so that what a program
-        # reads stays the evidence alone.
-        typer.echo(NO_PROVIDER_NOTE, err=True)
+    if settings is None or no_model:
+        # Core First: with no model — or with the model waved off — the evidence
+        # is still the answer, and the command still succeeds. The note goes to
+        # stderr so that what a program reads stays the evidence alone.
+        typer.echo(NO_PROVIDER_NOTE if settings is None else NO_MODEL_NOTE, err=True)
         typer.echo(
-            build_explanation_json(None, context, memory=section_object(section))
+            envelope_json(None, None, section_object(section))
             if as_json
-            else context_json(context, section)
+            else offline_text(section)
         )
         return
 
     # What the model is shown: the bundle itself when it fits, and a stated
-    # selection of its largest entries when the commit is too large to send
+    # selection of its largest entries when the unit is too large to send
     # whole. The evidence stays the bundle either way — printed with no model,
     # carried whole by --json, and the thing a citation is read beside.
-    view = build_view(context)
+    view = view_of()
     if view.note is not None:
         typer.echo(view.note, err=True)
 
@@ -813,11 +897,7 @@ def explain(
             raise typer.Exit(code=1) from None
 
     if as_json:
-        typer.echo(
-            build_explanation_json(
-                explanation, context, view.selection, section_object(section)
-            )
-        )
+        typer.echo(envelope_json(explanation, view.selection, section_object(section)))
         return
 
     block = render(explanation)
@@ -827,6 +907,62 @@ def explain(
         # stated, printed from the store and never from the model.
         block = f"{block}\n\n{render_section(section, related_notes(explanation))}"
     typer.echo(block)
+
+
+def _span_context_json(span, section) -> str:
+    """The offline answer for a range: the set bundle, with the memory key beside it.
+
+    The same shape ``memory_section.context_json`` prints for a commit, and the
+    key is added here for the same reason: the evidence layer must not know
+    that memory exists, and with nothing to show the bytes are the bundle's own.
+    """
+    found = build_span_object(span)
+    if section is not None:
+        found["memories"] = section_object(section)
+    return json.dumps(found, indent=2, ensure_ascii=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryTouch:
+    """One name a set touched, in the shape the memory reader expects."""
+
+    path: str
+    old_path: str | None = None
+
+
+class _SetForMemories:
+    """The set bundle presented to the memory section's reader.
+
+    The reader is a commit's and stays untouched — v0.6's ruling is that the
+    memory layer is not — so the set is presented as what it is: every name its
+    occurrences report (a rename counts under both, the rule the reader itself
+    applies), the lives those paths belong to, and the definitions its commits
+    changed. ``sha`` is the empty string, which names no commit at all: a range
+    is not a commit, and a rule that matched member commits would be a new rule
+    for the layer this phase does not touch. ``committed_at`` is the tip's,
+    because a memory with a since-date is in force as of the moment the change
+    completed.
+    """
+
+    def __init__(self, span) -> None:
+        touched = []
+        for change in span.changes:
+            touched.append(_MemoryTouch(path=change.path))
+            for occurrence in change.occurrences:
+                if occurrence.old_path:
+                    touched.append(
+                        _MemoryTouch(path=change.path, old_path=occurrence.old_path)
+                    )
+        self.sha = ""
+        self.changes = tuple(touched)
+        self.lifecycle = span.lifecycle
+        self.definitions = span.definitions
+        self.committed_at = span.commits[-1].committed_at
+
+
+def _memories_of(span):
+    """The set as the memory reader's context, named for what it is."""
+    return _SetForMemories(span)
 
 
 # Memory. The acts are Unit 1's five plus Unit 2's adopt; this unit ships the

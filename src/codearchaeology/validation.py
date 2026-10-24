@@ -273,20 +273,26 @@ def _related(
     return tuple(found)
 
 
-def _known(context: CommitContext) -> dict[str, set[str]]:
+def _known(context) -> dict[str, set[str]]:
     """Everything a citation is allowed to name, read out of the context.
 
     Built from the context rather than from a rule about what a sha looks like,
-    so a citation is checked against what this commit's evidence actually holds.
+    so a citation is checked against what this unit's evidence actually holds.
     The two kinds that are not a single name are built in the same form the
-    prompt asks for, which is what makes "copied exactly" checkable rather than a
-    matter of the model's formatting.
+    prompt asks for, which is what makes "copied exactly" checkable rather than
+    a matter of the model's formatting.
 
     A ``range`` is one changed span in one file, so a claim about where the
     change landed cannot cite a whole file and call it precise. A ``cochange`` is
     one direction of a pair, because the statistic is not symmetric: "this file's
     commits also touch that one" and the reverse are different numbers.
     """
+    from codearchaeology.span import SpanContext
+
+    if isinstance(context, SpanContext):
+        return _known_span(context)
+
+    commits = {context.sha}
     commits = {context.sha}
     paths = {change.path for change in context.changes}
     definitions = {definition.qualname for definition in context.definitions}
@@ -325,6 +331,54 @@ def _known(context: CommitContext) -> dict[str, set[str]]:
         # the kind is legal and the citation is refused for naming nothing,
         # which is the honest answer rather than a crash on a missing key.
         CHANGESET: set(),
+    }
+
+
+def _known_span(span) -> dict[str, set[str]]:
+    """The citation targets of a set bundle, in the same forms as a commit's.
+
+    The commits are every member of the set plus the versions the definition
+    events compared against; the paths, the spans and the co-change pairs are
+    the set's own; and the one ``changeset`` is the unit itself, written exactly
+    as the envelope names it — which is also the only form the prompt teaches.
+    """
+    commits = {commit.sha for commit in span.commits}
+    paths = {change.path for change in span.changes}
+    definitions = {definition.qualname for definition in span.definitions}
+    ranges = {
+        f"{change.path}:{span_range.start}-{span_range.end}"
+        for change in span.changes
+        for span_range in change.ranges
+    }
+    cochanges = {
+        f"{report.path} -> {partner.path}"
+        for report in span.cochange
+        for partner in report.partners
+    }
+
+    for entry in span.history:
+        paths.add(entry.path)
+        commits.update(commit.sha for commit in entry.commits)
+    for life in span.lifecycle:
+        paths.add(life.path)
+        paths.update(life.path_history)
+    for report in span.cochange:
+        paths.add(report.path)
+        paths.update(partner.path for partner in report.partners)
+    for definition in span.definitions:
+        for event in definition.events:
+            commits.add(event.commit_sha)
+            if event.previous_commit_sha:
+                commits.add(event.previous_commit_sha)
+
+    return {
+        COMMIT: commits,
+        FILE: paths,
+        DEFINITION: definitions,
+        RANGE: ranges,
+        COCHANGE: cochanges,
+        ABSENCE: {absence.kind for absence in span.absences},
+        CHANGESET: {f"{span.base}..{span.tip}"},
     }
 
 

@@ -949,7 +949,8 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
       "history_commits": 5,
       "history_commits_omitted": 0
     }
-  }
+  },
+  "bundle_sha256": "bd272b0aaf2c93e67674be04e6bd3cef252d5b9336f38bd28b8c37d96dabc2f0"
 }
 ```
 
@@ -1446,7 +1447,8 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
         "citations": []
       }
     ]
-  }
+  },
+  "bundle_sha256": "1afef2b02f42f7c0425edf30f5bd86f7af5a506706306183bb81e679d08a1378"
 }
 ```
 

@@ -10,16 +10,15 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has three units. The diff reader and the set
-bundle are landed — `12e0e42` and `3625cac` on `origin/main`, all four CI jobs
-green on each — and the set's selection (Unit 3) is built and green at **1067
-tests** under `uv run pytest`: `COMMITS = 25`, set against measured ranges
-(ten-to-fifty-commit ranges send 16,000–23,000 estimated tokens; a
-two-hundred-commit monster cuts a 2,057,000-token bundle to 47,000), the commit
-list keeps the graph's order while every other list ranks by size, and every
-dropped thing is counted. Unit 3 sits uncommitted for review; units 4–6 wait
-on the user's word. The pilot stays shelved — a waiver, not a null result; the
-value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has four units. The diff reader, the set
+bundle and the set's selection are landed — `12e0e42`, `3625cac` and `1bae454`
+on `origin/main`, all four CI jobs green on each — and the command surface
+(Unit 4) is built and green at **1074 tests**: `explain <base>..<tip>` carries
+the set bundle through the same three paths a commit has, `--no-model` waves a
+configured model off, `explain --json`'s envelope gains `bundle_sha256` for
+both units, and the validator knows a span's citations. Unit 4 sits uncommitted
+for review; units 5–6 wait on the user's word. The pilot stays shelved — a
+waiver, not a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -72,6 +71,14 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.6 Unit 4: the command surface, 2026-10-24
+
+**What was built.** `explain` takes a second unit: `<base>..<tip>` resolves both sides to full shas, builds the set bundle, and runs it through the same three paths a commit has — offline print, `--json`, model — because the frozen rule allows no fourth. The half a unit does not change (offline note, provider call, validate, retry once, emit) is one implementation, `_run_explain`, fed by each unit's builders; two copies of the retry rule would be two places that can disagree. `--no-model` waves a configured model off (the design's §5.2). The envelope gains `bundle_sha256` — sha256 over the evidence object's canonical JSON — for commits and ranges alike (§5.4), and the range envelope names the unit under `range` instead of `commit`, because a key that names the unit must not say it is a commit. The validator's known set grew a span branch: every member commit, the set's paths and spans, and exactly one `changeset` — `base..tip`, the form the prompt teaches.
+
+**How the memory section rides a range without the memory layer moving.** The reader (`memory_section.build_section`) is a commit's and stays byte-for-byte untouched — row 5. The set is presented to it through a small adapter in `cli.py`: every name the occurrences report (a rename counts under both, the reader's own rule), the lives, the definitions; `sha` is the empty string, which names no commit at all — a range is not one, and a member-commit match would be a new rule for the layer this phase does not touch; `committed_at` is the tip's, because a memory with a since-date is in force as of the moment the change completed. The consequence is disclosed: **a memory whose subject is one commit is not shown for a range in v0.6.** That is the honest reading of the ruling; a later phase can argue for the member rule.
+
+**The tests that had to move, each with the reason beside it:** the READMEs' two `explain --json` blocks per language gained the real `bundle_sha256` line (the replay contract — the blocks are compared line for line, and the hash is fixture-deterministic); `test_contract`'s and `test_memory_boundaries`' envelope key sets gained the key with a comment naming §5.4. Nothing else moved.
 
 ## v0.6 Unit 3: the selection for a set, 2026-10-24
 
