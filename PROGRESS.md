@@ -10,11 +10,18 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has a problem definition and no code:
-`docs/v0.6-problem-definition.md` fixes the phase's question, its evidence
-boundary, its non-goals and the six decisions that are the user's — the reasons,
-and the four state facts the unit checked, are in the section below. Nothing was
-implemented and none of those decisions was taken. The pilot is shelved by the user's ruling of 2026-10-24 and its v0.6 precondition is waived — a waiver, not a null result; the value claim stays UNKNOWN. §11 rows 1–3 and 5 were ruled the same day (the unit is a revision range; the diff enters the bundle as bounded text; persistence is A for prose and E for provenance; the Memory layer is untouched), so v0.6's next unit is the design freeze, the user's to commission. `b2fd3d8`'s audit record and the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has a problem definition, five ruled decisions
+and a design freeze, and still no code: `docs/v0.6-design.md` turns the rulings
+into the set bundle's shape, the diff's read mechanism and stated bound, the
+selector, the set-wide selection, the run record (option E — `explain_runs`, the
+phase's only schema change, designed and not created), and two appended
+amendments to frozen documents — the ruled one on the evidence contract and the
+flagged consequential one on the explanation schema, both in the §18 style. The
+one surface beyond the rulings is the `runs` read command, marked for the user
+to cut at review. Implementation starts only after the user reviews the freeze;
+the diff cap's and the commits cap's values stay open by ruling, to be set
+against the measured ceiling when built. The pilot stays shelved — a waiver, not
+a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -67,6 +74,23 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The v0.6 design freeze: the range bundle, the diff, and the run record, 2026-10-24
+
+**What the unit is.** `docs/v0.6-design.md`, plus two appended amendment sections — §11 on `docs/v0.4-evidence-contract.md` (ruled by §11 row 2) and §10 on `docs/v0.4-explanation-schema.md` (consequential, flagged for the user's veto). No code, no schema created, no CLI: implementation starts only after the user reviews the freeze. The tree was clean, level with the origin at `338b362`, and that commit's four CI jobs are green — checked, not assumed.
+
+**The decisions that carry the design, each with the reason it will be argued with:**
+
+1. **One diff per unit.** The bundle carries the diff of the unit's two endpoints (parent→commit; base→tip for a range; empty-tree→commit for a root) and nothing else. This dissolves the merge question rather than answering it: a merge as the unit keeps `merge_no_diff`, and inside a range a merge needs no diff because the unit's diff is the net one — no parent is ever chosen.
+2. **Git computes every diff** (`git diff` with `--no-color --no-ext-diff --no-textconv --unified=3 --find-renames=50%` pinned, so user configuration cannot change the bytes). The evidence contract's §5 had assumed the blob reader plus a tool-side diff; that is corrected in the amendment, because `difflib` is not git's algorithm and the v0.4 problem definition's §12 fact table already fixes a diff as "what git printed".
+3. **Two name collisions found in the tree and designed around.** The citation kind `range` has meant a changed span since v0.4, so the range unit's kind is `changeset` (`base..tip`); and "provenance" already means memory's subject re-checking (v0.5 Unit 7), so option E's table is `explain_runs` with its own stamp, outside `storage.TABLES`, on the memory precedent.
+4. **Four new absences, four different sentences.** `binary_no_text`, `not_analyzed` (a range over a `--since`-analyzed repository contains un-analyzed commits routinely — the absence is load-bearing, not an edge case), and the partition `gone_within_range` / `net_unchanged` — created-and-deleted-inside and changed-and-changed-back must never merge into one "not in the net diff".
+5. **The prompt is versioned by hash, not by a constant** — sha256 over `INSTRUCTIONS`, because a version number can forget to bump and a hash cannot lie about what the model was told.
+6. **A run row is written exactly when an explanation is printed** — not on provider failure, model failure, offline, or `--no-model`: one printed explanation, one row, append-only.
+
+**The two items flagged for the user at review, beyond the rulings:** the schema companion amendment (striking it costs nothing the rulings require — it exists so two frozen documents cannot quietly disagree), and the `runs` command (the read half of option E; cutting it leaves the write side standing on the ruling).
+
+**Still open, on purpose:** the `DIFF_CHARACTERS` and `COMMITS` values (set against the measured ceiling when built, context-budget precedent), §11 row 6 (`confidence` — its deadline is not triggered: nothing in v0.6 reads `explain --json`), and the prompt unit (deferred since v0.4, still deferred).
 
 ## The user rules on four of v0.6's six decisions, 2026-10-24
 
