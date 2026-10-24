@@ -4,8 +4,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **状态：v0.5.3 已发布——注释 tag `v0.5.3`，附 GitHub Release，四个 CI job 在该提交
-> 上全部通过之后才打的。** 现在有十九个
+> **状态：v0.6.0 已发布——注释 tag `v0.6.0`，附 GitHub Release，四个 CI job 在该提交
+> 上全部通过之后才打的。** v0.6 给了 `explain` 第二种单元：`explain <base>..<tip>` 把
+> 两点之间的每一个提交收进同一份 bundle——每个文件只出现一次，装着整段范围的净结果——
+> `--no-model` 让你不必清掉任何环境变量就能只读证据；这次发布加了什么、依据的五条裁决，
+> 在 [`docs/v0.6-design.md`](docs/v0.6-design.md) 和
+> [`docs/v0.6-problem-definition.md`](docs/v0.6-problem-definition.md)。现在有十九个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
 > 的八个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`、
 > `import`），
@@ -58,7 +62,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.3
+archaeology 0.6.0
 ```
 
 ## 用法
@@ -67,7 +71,7 @@ archaeology 0.5.3
 仓库里写任何东西**——分析结果写进你缓存目录里的数据库。
 
 读侧的命令——`timeline`、`hotspots`、`files`、`file`、`structure`、`cochange`、
-`explain`、`memory list`、`memory show`——支持 `--json`，用同样的字段名把同样的事实输出
+`explain`、`memory list`、`memory show`、`runs`——支持 `--json`，用同样的字段名把同样的事实输出
 给别的程序读。stdout 上只有 JSON——「分析结果已过期」的提示走 stderr——所以无论快照是不是
 最新的，输出都能被解析。`commit` 目前还没有 JSON 形式；写入方 `analyze`、`ast` 和
 memory 的各个写入动作打印的是这次做了什么。
@@ -728,10 +732,12 @@ $ archaeology cochange core/app.py --min-shared 1 --json
 co-change 是**关于提交的统计**，而块里那句话说清了它不是什么：两个文件一起动不是依赖关系，
 共享一次提交也不是依赖的证据。它是一个该去看一眼的地方，不是一个可以下的结论。
 
-### 解释一个提交
+### 解释一个提交，或一段范围
 
 `explain` 是唯一会和模型说话的命令。它把一个提交的证据——其他命令读的全部东西，收成一份
-bundle——组装起来，并在配置了模型时让它写出来。
+bundle——组装起来，并在配置了模型时让它写出来。**同一条命令也解释一段范围**：
+`explain <base>..<tip>` 把两点之间的每一个提交收进同一份 bundle，走的是同样的三条路——
+离线打印、`--json`、模型——因为离线路径打印的就是模型看到的。
 
 **没有模型时它直接打印证据本身。**这是一个能用的答案，不是错误：这个工具首先是本地分析器，
 模型是加在它上面的东西。
@@ -761,9 +767,81 @@ definitions、通常和这些文件一起变的文件、更早碰过它们的提
 4,000 字符为界；被截断的行会把两个尺寸都写出来，所以一段不完整的 patch 永远不会被读成
 完整的。`bounds` 说明被截断的是什么，所以一个漏掉行的上下文不会读起来像完整的。
 
+**一段范围是"多个提交共一份 bundle"，不是"每个提交一份"。**`explain
+392cc0db..78c0647a`——在示例仓库里，就是初始提交之后直到 HEAD 的全部——打印的是集合
+bundle：提交按从旧到新排列，merge 也在其中、标着 `is_merge`，git 对 merge 不打 diff 的
+缺失项照旧在场；每个文件**只出现一次**。文件那一行装的是整段范围的净结果：`occurrences`
+点名范围内碰过这个路径的每一个提交，`ranges` 和 `diff` 是整段改动在两个端点之间做的事
+——不是其中任何一个提交的 patch——`net_status` 说明这段范围对路径做了什么（新增、删除、
+按多少相似度改名）。读不出 diff 的路径带一个有名的缺失项：二进制文件是
+`binary_no_text`，范围内被碰过但两端内容相同的文件是 `net_unchanged`，在范围内出生又
+消失的文件是 `gone_within_range`，结构层还没读过的 Python 文件是 `not_analyzed`。每个
+被碰路径的 `history` 是范围第一次碰它之前的经历，所以不必再跑一条命令就能对照"之前的
+样子"读这次改动。解析不了的 revision 会在报错里被点名；两端之间没有任何提交的范围会被
+当作空范围拒绝，并说明 tip 可能不在 base 之前——空范围永远不会被解释成"什么都没发生"。
+
+```console
+$ archaeology explain 392cc0db..78c0647a
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "range": {
+    "base": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+    "tip": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+    "commits": 5,
+    "authors": [
+      "Ada Lovelace <ada@example.com>"
+    ],
+    "first_authored_at": "2024-03-03T09:00:00+00:00",
+    "last_authored_at": "2024-03-10T09:00:00+00:00",
+    "merge_commits": 1
+  },
+  "commits": [
+    {
+      "sha": "ed9c175d27ed94fcfc21cebb09b09a5e093e0aa6",
+...
+  "absences": [
+    {
+      "kind": "merge_no_diff",
+      "path": null,
+      "detail": "git prints no diff for the merge bbed4c456457f115e0687de6d04580cc8276f20e"
+    },
+    {
+      "kind": "binary_no_text",
+      "path": "assets/logo.png",
+      "detail": "the endpoint blobs are binary, so git prints no diff text"
+    },
+    {
+      "kind": "not_in_this_commit",
+      "path": "legacy.py",
+      "detail": "the file was not in this commit"
+    }
+  ],
+  "bounds": {
+    "co_change_partners": 5,
+    "co_change_files": 5,
+    "co_change_files_omitted": 0,
+    "history_commits": 5,
+    "history_commits_omitted": 0
+  }
+}
+```
+
+**大到发不出去的范围，按它自己的故事裁剪。**模型看到的视图保留改动最大的二十五个提交，
+并按证据已经许诺过的顺序——从旧到新——排列；文件、行段和 definitions 的裁法和单个
+提交的相同，凡是丢过行的列表都会说丢了多少。命令打印的始终是完整的集合，而答案是拿
+模型**实际看到的**去校验的。实测：一段两百个提交的范围，集合 bundle 超过两百万个估算
+token，而视图落在五万以内。
+
+**关于"怎么读一段范围"，模型被告知的是规则，不是暗示。**提示词加了两条：永远不要把
+一段范围读成一个提交——"这些提交构成同一次变更"是候选，永远不是观察；带 `truncated`
+标记的 diff 行只有一部分正文，永远不是完整的。
+
 **和这个提交有关的 memory 会显示在证据旁边**，有自己的标题，永远不在 bundle 里面——见
 [`explain` 会拿这些 memory 做什么](#explain-会拿这些-memory-做什么)。如果一条都没有，输出
-和 memory 这一层出现之前完全一样。
+和 memory 这一层出现之前完全一样。范围的这一节刻意更窄：显示的是主题为集合碰过的某个
+路径的那些 memory——改名前后两个名字都算——并以 tip 的时刻判断是否生效。主题是一个提交的
+memory 不会在范围下显示，因为一段范围不是那个提交；这一阶段没有给 memory 层任何新规则，
+所以能匹配一段集合的，就是原本就匹配的那些。
 
 **大到发不出去的提交，只会为模型做裁剪，不会为别的任何东西裁剪。**bundle 本身刻意不设上限
 ——文件列表提前截断会藏起被问的那个问题的答案，而读者可以往下翻——所以一个碰了一千个文件的
@@ -804,6 +882,9 @@ export CODEARCHAEOLOGY_AI_API_KEY=...        # 或 OPENAI_API_KEY
 重试覆盖连接与 DNS 失败、读超时、`429` 和 `5xx`；其余 `4xx` 是请求或密钥不对，重复它只会花你
 的钱再失败一次。
 
+`--no-model` 对两种单元都强制走离线路径：打印 bundle，提示说明原因，不联系任何 provider，
+也不写运行记录——不用清掉任何环境变量，就能读到纯证据。
+
 答案分三个标题展示，而这三个标题就是读者分辨哪部分是哪种东西的全部依据：
 
 - **Observed**（观察到）——证据里有的东西。每一行都引用 bundle，而引用了 bundle 里没有
@@ -825,9 +906,11 @@ definitions、和它们一起变的文件、以及缺失项。引用会印在使
 在建立于其上的候选原因下面，所以读者永远不必顺着 id 回到 JSON 里去查某句话是凭什么说的。
 **候选原因可以是错的；它做不到的，是让读者看不见它站在什么上面。**
 
-一条引用可以命名六种东西之一，每一种都是拿 bundle 去核对的，而不是核对它的形状：`commit`、
-`file`、`definition`、`range`（diff 真正落下的行段）、`cochange`（一对的一个方向，因为这个
-统计量不是对称的）、`absence`。引用**能承载这个断言的最窄的那样东西**——是行段而不是整个
+一条引用可以命名七种东西之一，每一种都是拿 bundle 去核对的，而不是核对它的形状：`commit`
+（单元是范围时，集合里的任何一个提交）、`file`、`definition`、`range`（diff 真正落下的
+行段）、`cochange`（一对的一个方向，因为这个统计量不是对称的）、`changeset`（单元本身，
+`base..tip`，用于关于整段改动的断言——不叫 `range`，因为那个词已经表示行段）、`absence`。
+引用**能承载这个断言的最窄的那样东西**——是行段而不是整个
 文件，是那一对而不是"这些文件"——这才是答案可被核对的前提。
 
 **而候选原因会被标明它是什么。** 候选下面有一句话说明：解读不是发现——一起动不是依赖，一个
@@ -861,6 +944,33 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
     }
   },
   "bundle_sha256": "bd272b0aaf2c93e67674be04e6bd3cef252d5b9336f38bd28b8c37d96dabc2f0"
+}
+```
+
+范围打印同一个信封，只是命名单元的键从 `commit` 换成了 `range`：
+
+```console
+$ archaeology explain 392cc0db..78c0647a --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "range": "392cc0db21a7a299e0457555a38c1cfeef7578a3..78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+    "range": {
+      "base": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+      "tip": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+      "commits": 5,
+...
+    "bounds": {
+      "co_change_partners": 5,
+      "co_change_files": 5,
+      "co_change_files_omitted": 0,
+      "history_commits": 5,
+      "history_commits_omitted": 0
+    }
+  },
+  "bundle_sha256": "9c23459e9c9bb731a724e8f3a9df6be44c05e8ed210fd6554b811ad3692e445a"
 }
 ```
 
@@ -1574,7 +1684,7 @@ benchmarks/
 | v0.3 | AST 分析、函数与类的演化，以及 co-change | 已完成 |
 | v0.4 | 基于证据层的 AI 解释（Provider 可替换） | 已完成——`explain`，带 OpenAI 兼容的 provider |
 | v0.5 | Developer Memory —— 人知道的事情，存在证据旁边 | 已完成——`memory create`、`list`、`show`、`supersede`、`invalidate`、`adopt`，`explain` 会把相关的那些显示在证据旁边 |
-| v0.6 | AI 参与的改动分析与回放 | 计划中 |
+| v0.6 | AI 参与的改动分析与回放 | 已完成——基于一份集合 bundle 的 `explain <base>..<tip>`、`--no-model`，以及读回提问的 `runs` |
 
 每个阶段一次只做一个，前一个稳定之前不设计后一个。
 
@@ -1607,6 +1717,10 @@ benchmarks/
   另一个文件。回来的路是 `analyze --db <旧文件>` 再 `memory adopt --from <旧路径>`，写在
   上面的"仓库搬家的时候"一节里。自己去找旧文件，等于要猜两个路径是同一个项目，而这个工具
   不做这种猜测。
+- **主题是一个提交的 memory，不会挂到一段范围上。**`explain <base>..<tip>` 显示的是主题
+  为集合碰过的某个路径的那些 memory，以 tip 的时刻判断是否生效；主题是提交的那些不显示——
+  一段范围不是那个提交，这一阶段也没有给 memory 层关于成员提交的规则。想看那些，对成员
+  提交跑 `explain <sha>`。
 - **两个方向上都还没有增量。** `analyze` 重扫全部历史，把每个提交、每个父提交、每一行
   文件改动都重写一遍——二十万提交时，它 85% 的时间就是这次重写。AST 这一趟每次都会走遍
   所有 Python 文件版本：它不解析已经解析过的、也不写已经存好的，但仍然要把每个 blob 和

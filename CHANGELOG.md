@@ -8,6 +8,83 @@ A version here is a Git tag and a GitHub Release — the project is not on PyPI,
 there is no `pip install` to go with one. The date is the release commit's date.
 v0.1.0 was never tagged; its section records the first state that was pushed.
 
+## [0.6.0] - 2026-10-24
+
+`explain` gains a second unit: a revision range. The freeze is
+`docs/v0.6-design.md`, built against the five rulings of 2026-10-24 in
+`docs/v0.6-problem-definition.md` §11, and the honest shape of the work is that
+the range could not be added without touching the commit's own bundle: the diff
+text both units now carry is read per path straight from git, bounded, and a row
+the bound cut states both sizes.
+
+### Added
+
+- **`explain <base>..<tip>` — the set bundle.** One bundle for every commit
+  between the two, through the same three paths as a commit (offline print,
+  `--json`, model). The commits are listed oldest first, a merge among them
+  marked and covered by git's no-diff-for-merges absence, and each file appears
+  **once**: its row holds the net of the whole range — `occurrences` naming
+  every member commit that touched the path, `ranges` and `diff` read between
+  the two endpoints rather than from any one commit, `net_status` saying what
+  the range did to the path — and `history` is the life the path had before the
+  range first touched it. A revision that does not resolve is named in the
+  error; a range holding no commits is refused saying the tip may not be ahead
+  of the base, never explained as a no-op.
+- **The `changeset` citation kind, and two prompt rules.** A citation may name
+  the unit itself (`base..tip`) for claims about the whole change — not called
+  `range`, because that word has meant a changed span since v0.4, and the
+  `range` kind generalises to the net diff's spans unchanged. The prompt gains
+  the unit rule (a range is never read as one commit; "these commits form one
+  change" is a candidate, never an observation) and the bounded-diff rule (a
+  `truncated` diff row holds part of its text, never the whole of it).
+- **A range's selection keeps its story.** Past twenty-five commits the model's
+  view keeps the changes that are largest and lists them in the order the
+  evidence promised — oldest first — with files, spans and definitions cut the
+  way a commit's are. What the command prints stays the whole set. Measured on
+  a two-hundred-commit range: the bundle past two million estimated tokens, the
+  view under fifty thousand.
+- **`explain --no-model`** — the offline path forced for either unit: the
+  bundle printed, the note saying why, nothing reaching a provider, and no run
+  row written. The read-the-evidence path without unsetting a thing.
+- **`archaeology runs` — the nineteenth command.** The `explain_runs` table is
+  written exactly when an explanation is printed — the offline path,
+  `--no-model`, a provider failure and a refused answer all write nothing — and
+  holds the five ruled facts plus the unit: the endpoint, the model,
+  `bundle_sha256` (the value the envelope carries), `prompt_sha256` (the hash
+  of the prompt's instructions — a version that cannot forget to bump), and the
+  moment. No sentence a model wrote, in any column. The table keeps its own
+  stamp beside the evidence schema's, is deliberately not one of the evidence
+  tables, and no other command reads it.
+- **`bundle_sha256` in the `explain --json` envelope** — sha256 over the
+  canonical JSON of the evidence object the same document carries, so "was this
+  explanation produced from the bundle I have now?" is a comparison rather than
+  a memory: re-explain, and compare the two hashes.
+
+### Changed
+
+- **Every file row in a bundle carries its patch text.** Read from git per run
+  (rename detection at git's default 50%, full index lines, three lines of
+  context) and bounded at 4,000 characters per path, with `characters`,
+  `characters_total` and `truncated` on the row. A binary file is named by the
+  `binary_no_text` absence rather than shown as an empty diff. Nothing is
+  stored: the text is re-read each time, like the ranges beside it.
+- **The absence vocabulary grows from four kinds to eight.** `binary_no_text`
+  joins the commit unit's, and the range adds `not_analyzed` (the structure
+  pass has not read the path), `gone_within_range` (born and gone inside the
+  range) and `net_unchanged` (touched inside it, identical at both ends).
+- **The model's view ceiling rose from 12,000 to 20,000 tokens.** The honest
+  view of the widest benchmark shape — a wide diff rides every row now — no
+  longer fits under the old ceiling.
+- **A definition's rows name their commit.** Each definition in a bundle
+  carries `commit_sha`, so a definition's movement inside a range names the
+  commit that moved it.
+- **Two frozen contracts were amended in place**, each dated and visible as an
+  amendment: `docs/v0.4-evidence-contract.md` §11 (the diff is in; git, not an
+  object reader, produces it; the absences table grows) and
+  `docs/v0.4-explanation-schema.md` §10 (the `changeset` kind, the four new
+  absences, the envelope's `bundle_sha256`).
+- **The suite grew from 1030 to 1088 tests**, green on Python 3.13 and 3.11.
+
 ## [0.5.3] - 2026-10-11
 
 A hardening pass on `memory import`, and the decisions that were left open when

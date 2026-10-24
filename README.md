@@ -4,8 +4,15 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Status: v0.5.3 is released — annotated tag `v0.5.3`, with a GitHub Release,
-> made after all four CI jobs passed on that commit.** Nineteen commands work
+> **Status: v0.6.0 is released — annotated tag `v0.6.0`, with a GitHub Release,
+> made after all four CI jobs passed on that commit.** v0.6 gives `explain` a
+> second unit: `explain <base>..<tip>` builds one bundle for every commit
+> between the two — each file once, holding the net of the whole range — and
+> `--no-model` reads the evidence alone without unsetting anything; what the
+> release adds and the five rulings it was built against are
+> [`docs/v0.6-design.md`](docs/v0.6-design.md) and
+> [`docs/v0.6-problem-definition.md`](docs/v0.6-problem-definition.md).
+> Nineteen commands work
 > today: the ten of v0.4 — through `explain`, the only one that talks to a model —
 > plus eight memory acts
 > (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt`, `export`
@@ -67,7 +74,7 @@ $ git clone https://github.com/Zyvn-coder/CodeArchaeology
 $ cd CodeArchaeology
 $ uv sync
 $ uv run archaeology --version
-archaeology 0.5.3
+archaeology 0.6.0
 ```
 
 ## Usage
@@ -77,8 +84,8 @@ directory. None of them ever writes to the repository: the analysis goes into a
 database in your cache directory.
 
 The reading commands — `timeline`, `hotspots`, `files`, `file`, `structure`,
-`cochange`, `explain`, `memory list` and `memory show` — take `--json`, which
-prints the same facts in the same names for other programs to read. Only the JSON
+`cochange`, `explain`, `memory list`, `memory show` and `runs` — take `--json`,
+which prints the same facts in the same names for other programs to read. Only the JSON
 goes to stdout — the note about a stale analysis goes to stderr — so the output
 stays parseable whether or not the snapshot is current. `commit` has no JSON form
 yet, and the writers — `analyze`, `ast` and the memory acts — print a summary of
@@ -787,11 +794,14 @@ Co-change is a *statistic about commits*, and the block says what it is not: two
 files moving together is not a dependency, and a shared commit is not evidence of
 one. It is a place to look, not a conclusion to draw.
 
-### Explain one commit
+### Explain one commit, or a range of them
 
 `explain` is the only command that talks to a model. It builds the evidence for
 one commit — everything the other commands read, gathered into one bundle — and,
-when a model is configured, has it written out.
+when a model is configured, has it written out. **The same command explains a
+range**: `explain <base>..<tip>` gathers every commit between the two into one
+bundle of the same kind, through the same three paths — offline print, `--json`,
+model — because what the offline path prints is exactly what the model is shown.
 
 **Without a model it prints the evidence itself.** That is a working answer rather
 than an error: this is a local analyser first, and the model is an addition to it.
@@ -824,10 +834,92 @@ and a row the bound cut states both sizes, so a partial patch never reads as a
 whole one. `bounds` says what was capped, so a context that
 left rows out never reads like a complete one.
 
+**A range is one bundle over many commits, not many bundles.** `explain
+392cc0db..78c0647a` — in the demo repository, everything from after the initial
+commit to HEAD — prints the set bundle: the commits oldest first, a merge among
+them marked `is_merge` and covered by git's no-diff-for-merges absence, and each
+file **once**. A file's row is the net of the whole range: `occurrences` names
+every commit inside the range that touched the path, `ranges` and `diff` are
+what the whole change did between the two endpoints — not any one commit's
+patch — and `net_status` says what the range did to the path (added, deleted,
+renamed at so much similarity). A path whose diff cannot be read carries a named
+absence: a binary file is `binary_no_text`, a file touched inside the range but
+identical at both ends is `net_unchanged`, a file born and gone inside it is
+`gone_within_range`, and a Python file the structure pass has not read is
+`not_analyzed`. Each touched path's `history` is the life it had before the
+range first touched it, so the change can be read against what came before it
+without a second command. A revision that does not resolve is refused naming the
+revision, and a range holding no commits is refused saying the tip may not be
+ahead of the base — an empty range is never explained as a no-op.
+
+```console
+$ archaeology explain 392cc0db..78c0647a
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "range": {
+    "base": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+    "tip": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+    "commits": 5,
+    "authors": [
+      "Ada Lovelace <ada@example.com>"
+    ],
+    "first_authored_at": "2024-03-03T09:00:00+00:00",
+    "last_authored_at": "2024-03-10T09:00:00+00:00",
+    "merge_commits": 1
+  },
+  "commits": [
+    {
+      "sha": "ed9c175d27ed94fcfc21cebb09b09a5e093e0aa6",
+...
+  "absences": [
+    {
+      "kind": "merge_no_diff",
+      "path": null,
+      "detail": "git prints no diff for the merge bbed4c456457f115e0687de6d04580cc8276f20e"
+    },
+    {
+      "kind": "binary_no_text",
+      "path": "assets/logo.png",
+      "detail": "the endpoint blobs are binary, so git prints no diff text"
+    },
+    {
+      "kind": "not_in_this_commit",
+      "path": "legacy.py",
+      "detail": "the file was not in this commit"
+    }
+  ],
+  "bounds": {
+    "co_change_partners": 5,
+    "co_change_files": 5,
+    "co_change_files_omitted": 0,
+    "history_commits": 5,
+    "history_commits_omitted": 0
+  }
+}
+```
+
+**A range too large to send whole is cut by its story.** The view keeps the
+twenty-five commits whose changes are largest and lists them in the order the
+evidence already promised — oldest first — with the files, spans and definitions
+cut the same way a commit's are, and every list that lost rows says so. What the
+command prints stays the whole set, and the answer is checked against what the
+model was shown. Measured on a two-hundred-commit range, the set bundle runs
+past two million estimated tokens and the view of it lands under fifty thousand.
+
+**What the model is told about a range is ruled, not implied.** Two rules join
+the prompt: a range is never read as one commit — "these commits form one
+change" is a candidate, never an observation — and a diff row marked `truncated`
+holds part of its text, never the whole of it.
+
 **The memories kept about this commit are shown beside the evidence**, under their
 own heading and never inside the bundle — see
 [What `explain` does with them](#what-explain-does-with-them). With none to show,
-the output is exactly what it was before there was a memory layer at all.
+the output is exactly what it was before there was a memory layer at all. For a
+range the section is narrower on purpose: the memories shown are those whose
+subject is one of the paths the set touched — a rename counts under both names —
+judged as of the tip's moment. A memory whose subject is a commit is not shown
+for a range, because a range is not that commit; this phase gave the memory
+layer no new rules, so what matches a set is what already matched.
 
 **A commit too large to send whole is reduced for the model, and only for the
 model.** The bundle is deliberately not capped — a file list that stopped early
@@ -878,6 +970,10 @@ and DNS failures, a read that timed out, `429` and `5xx`; every other `4xx` is t
 request or the key being wrong, and repeating it would spend your money to fail
 identically.
 
+`--no-model` forces the offline path for either unit: the bundle is printed, the
+note says why, nothing reaches a provider, and no run row is written — the
+read-the-evidence path without unsetting a thing.
+
 The answer is shown under three headings, and they are the whole of what tells a
 reader which part is which:
 
@@ -907,10 +1003,13 @@ under the reason built on them, so a reader never has to follow ids back through
 the JSON to find out why something was said. **A candidate reason may be wrong;
 what it cannot do is leave a reader unable to see what it was standing on.**
 
-A citation names one of six things, and each is held against the bundle rather
-than against its shape: a `commit`, a `file`, a `definition`, a `range` (a span a
-diff actually put there), a `cochange` (one direction of a pair, because the
-statistic is not symmetric), or an `absence`. Citing the narrowest thing that
+A citation names one of seven things, and each is held against the bundle rather
+than against its shape: a `commit` — any commit in the set, when the unit is a
+range — a `file`, a `definition`, a `range` (a span a diff actually put there),
+a `cochange` (one direction of a pair, because the statistic is not symmetric),
+a `changeset` (the unit itself, `base..tip`, for claims about the whole change —
+not called `range`, because that word already means a span), or an `absence`.
+Citing the narrowest thing that
 carries the claim — the span rather than the file, the pair rather than "these
 files" — is what makes an answer checkable at all.
 
@@ -954,6 +1053,34 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
     }
   },
   "bundle_sha256": "bd272b0aaf2c93e67674be04e6bd3cef252d5b9336f38bd28b8c37d96dabc2f0"
+}
+```
+
+A range prints the same envelope, with `range` naming the unit instead of
+`commit`:
+
+```console
+$ archaeology explain 392cc0db..78c0647a --json
+No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_BASE_URL and CODEARCHAEOLOGY_AI_MODEL to have one explained.
+{
+  "range": "392cc0db21a7a299e0457555a38c1cfeef7578a3..78c0647a29c58018213455e4b99fb8f5869b2d3f",
+  "state": "evidence_only",
+  "explanation": null,
+  "evidence": {
+    "range": {
+      "base": "392cc0db21a7a299e0457555a38c1cfeef7578a3",
+      "tip": "78c0647a29c58018213455e4b99fb8f5869b2d3f",
+      "commits": 5,
+...
+    "bounds": {
+      "co_change_partners": 5,
+      "co_change_files": 5,
+      "co_change_files_omitted": 0,
+      "history_commits": 5,
+      "history_commits_omitted": 0
+    }
+  },
+  "bundle_sha256": "9c23459e9c9bb731a724e8f3a9df6be44c05e8ed210fd6554b811ad3692e445a"
 }
 ```
 
@@ -1786,7 +1913,7 @@ These are not aspirations. They constrain what the code is allowed to do.
 | v0.3 | AST analysis, function and class evolution, and co-change | Done |
 | v0.4 | AI explanations over the evidence layer (pluggable providers) | Done — `explain`, with the OpenAI-compatible provider |
 | v0.5 | Developer memory — what people know about the project, kept beside the evidence | Done — `memory create`, `list`, `show`, `supersede`, `invalidate` and `adopt`, and `explain` shows the related ones beside the evidence |
-| v0.6 | AI-assisted change analysis and replay | Planned |
+| v0.6 | AI-assisted change analysis and replay | Done — `explain <base>..<tip>` over one set bundle, `--no-model`, and `runs` reading back the asking |
 
 One stage at a time. Nothing in a later stage gets designed before the earlier
 stage is stable.
@@ -1832,6 +1959,11 @@ Each release, and what it changed, is recorded in the
   is the way back, and it is written out in *When the repository moves* above.
   Finding the old file by itself would mean guessing that two paths are one
   project, which this tool does not do.
+- **A memory whose subject is a commit does not attach to a range.**
+  `explain <base>..<tip>` shows the memories whose subject is one of the paths
+  the set touched, judged as of the tip's moment, and none whose subject is a
+  commit — a range is not that commit, and this phase gave the memory layer no
+  rule for member commits. `explain <sha>` on the member commit shows those.
 - **Nothing is incremental yet, in either direction.** `analyze` rescans the whole
   history and rewrites every commit, parent and file-change row — at two hundred
   thousand commits, 85% of its time is that rewrite. The AST pass walks every

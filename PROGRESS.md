@@ -10,17 +10,19 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has five units. The diff reader, the set
-bundle, the set's selection and the command surface are landed — `12e0e42`,
-`3625cac`, `1bae454` and `d1bc464` on `origin/main`, all four CI jobs green on
-each — and the run record (Unit 5, the ruled option E) is built and green at
-**1084 tests**: the `explain_runs` table (its own stamp, not one of
-`storage`'s) writes exactly when an explanation is printed — the five ruled
-facts plus the unit, never a sentence a model wrote — and `archaeology runs`
-reads it back, the nineteenth command. Unit 5 sits uncommitted for review;
-unit 6 (the prompt's own unit, still deferred) and the release wait on the
-user's word. The pilot stays shelved — a waiver, not a null result; the value
-claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6.0 is released: the five units landed as
+`12e0e42`, `3625cac`, `1bae454`, `d1bc464` and `ff48ae2` on `origin/main`, all
+four CI jobs green on each, and the release commit that names this paragraph
+records the closeout — both READMEs document the range unit (each carries two
+new replayed console blocks — the set bundle and the range envelope — plus the
+seven-kind citation list, `--no-model`, the range's memory rule, the roadmap
+row turned Done and a new known limitation), the CHANGELOG carries `[0.6.0]`,
+the tree says 0.6.0 in the six compared places, and the suite stands at
+**1088 tests** (the four new replayed blocks are the difference). The
+annotated tag `v0.6.0` and its GitHub Release follow all four CI jobs passing
+on that commit; unit 6 (the prompt's own unit) stays deferred
+as the freeze ruled. The pilot stays shelved — a waiver, not a null result; the
+value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
