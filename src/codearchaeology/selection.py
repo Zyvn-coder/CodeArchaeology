@@ -249,6 +249,17 @@ def build_view(context: CommitContext) -> View:
                 "omitted": omitted_ranges,
                 "per_file": RANGES_PER_FILE,
             },
+            # The diff text was bounded by the bundle, not by this selection, so
+            # what is counted here is not rows dropped but rows that arrived
+            # already cut — the count the design asked the selection to carry
+            # beside the per-row statement every cut row makes for itself.
+            "diffs": {
+                "cut": sum(
+                    1
+                    for change in changes
+                    if change.diff is not None and change.diff.truncated
+                ),
+            },
             "ast_changes": {
                 "shown": len(definitions),
                 "omitted": len(context.definitions) - len(definitions),

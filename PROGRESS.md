@@ -10,18 +10,16 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has a problem definition, five ruled decisions
-and a design freeze, and still no code: `docs/v0.6-design.md` turns the rulings
-into the set bundle's shape, the diff's read mechanism and stated bound, the
-selector, the set-wide selection, the run record (option E — `explain_runs`, the
-phase's only schema change, designed and not created), and two appended
-amendments to frozen documents — the ruled one on the evidence contract and the
-flagged consequential one on the explanation schema, both in the §18 style. The
-one surface beyond the rulings is the `runs` read command, marked for the user
-to cut at review. Implementation starts only after the user reviews the freeze;
-the diff cap's and the commits cap's values stay open by ruling, to be set
-against the measured ceiling when built. The pilot stays shelved — a waiver, not
-a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has its first code: Unit 1 of the design freeze,
+the diff reader. The patch text enters the single-commit bundle as bounded text
+(`DIFF_CHARACTERS = 4000`, set against measurement), `binary_no_text` joins the
+absence vocabulary in step with the validator's, the selection block counts the
+rows that arrived cut, and the suite is at **1037 tests green** under
+`uv run pytest` — the only invocation the README replay tests accept. The two
+places the building corrected the freeze's letter are recorded in the section
+below, with the reasons. Units 2–6 of the freeze wait on the user's word. The
+pilot stays shelved — a waiver, not a null result; the value claim stays
+UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -74,6 +72,25 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.6 Unit 1: the diff reader, 2026-10-24
+
+**What was built.** `context.py` reads the unit's own diff — this commit against its parent, the empty tree for a root, nothing for a merge — in one pinned `git diff` invocation, splits it into per-file sections verbatim, and rides each on its `FileContext` row as a `DiffText`: the text held, the whole size, and whether the ceiling cut it. `binary_no_text` enters the absence list (and `UNCERTAINTY_KINDS` the same day, so an honest answer naming it cannot be refused), the selection block gains `diffs: {cut: N}`, and both READMEs had their two now-false sentences made true again. Seven new tests; the suite is at 1037.
+
+**The value and its measurement.** `DIFF_CHARACTERS = 4000`, the message's own ceiling — a file's patch may cost a reader no more than a long commit message. Measured, not tasted: this repository's own history holds 345 per-file sections with median 4,004, p75 10,990, p90 23,466 and max 110,944 characters (the tail is documentation and vendored files); `benchmarks/context_benchmark.py`'s shapes print 460, 344, 311–344 and 2,124 — every one whole under 4,000 — while the two single-file extremes (22,297 and 32,727) and every lockfile-shaped monster are cut to their first hundred lines with the whole size on the row. The composed ceiling is the cap times the view's twenty files, as the design states it.
+
+**Two corrections the building made to the freeze's letter, each recorded here rather than smoothed over:**
+
+1. **The constant lives in `context.py`, not `selection.py`.** The freeze said "beside the six in `selection.py`" — but `selection` imports `context`, so the home the sentence named is a circular import away from the only module that applies the cap. It sits beside the bundle's own three caps (`CO_CHANGE_PARTNERS` and friends), which is where a bundle-layer bound belongs; the sentence's spirit — a named constant chosen against a measured ceiling — is kept exactly.
+2. **The invocation gained `--full-index` and pinned `--src-prefix=a/ --dst-prefix=b/`** beyond the command §2.2 froze. Not a deviation so much as the freeze's own determinism demand completed: `core.abbrev`, `diff.noprefix` and `diff.mnemonicPrefix` are configuration, and configuration left unpinned is two machines printing different bytes for one unit.
+
+**A trap the seam set, and a test that caught it.** Splitting on `"\ndiff --git "` eats the newline that ended the previous section's last line — the newline belongs to the section before the seam, not to the header after it. The first implementation lost it; the single-section fixture passed anyway (FIXED touches one file) and only the root-commit test failed (three sections, the named one not last). A fixture per shape is not pedantry: one shape, one test, or the seam's bug is invisible until a real repository shows it.
+
+**A v0.4-era test superseded by the rulings, rewritten rather than deleted.** `test_a_file_the_ast_layer_never_reads_is_not_reported_as_unreadable` asserted a binary path never appears in the absences; three landed v0.6 documents rule otherwise (`binary_no_text` is a named absence). The rewritten test holds the new line — binary appears under its own word and never under the words that mean a read failed — which is the old test's philosophy carried across the amendment rather than abandoned.
+
+**The view's guard re-based, with the number.** `VIEW_CEILING` moved from 12,000 to 20,000: the wide fixture's view now measures 18,044 estimated tokens carrying 23,663 characters of patch text, none of it cut. The guard still fails if `FILE_CHANGES` or `DIFF_CHARACTERS` drift upward — which is its job, and the comment beside it now says where the number came from.
+
+**A latent hazard observed and deliberately left.** The ranges reader (`_ranges_by_path`, v0.4) scans whole sections and can mistake a body line whose content begins `++ ` for a `+++` header, resetting the path mid-file; no fixture triggers it and it is not this unit's to fix. The new section parser cannot inherit it — it stops at the first `@@` line, because the headers are over when the hunks begin. Recorded so the next unit argues with it knowingly instead of finding it by accident.
 
 ## The v0.6 design freeze: the range bundle, the diff, and the run record, 2026-10-24
 

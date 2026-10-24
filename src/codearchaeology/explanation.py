@@ -56,13 +56,17 @@ EVIDENCE_KINDS = (COMMIT, FILE, DEFINITION, RANGE, COCHANGE, ABSENCE)
 RANGE_FORM = "<path>:<start>-<end>"
 COCHANGE_FORM = "<path> -> <partner>"
 
-# The four absences of the evidence contract, under the context builder's names,
-# plus the one a definition's disappearance is reported as.
+# The absences the evidence contract names — four from v0.4, the binary one the
+# contract's v0.6 amendment adds — under the context builder's names, plus the
+# one a definition's disappearance is reported as. The bundle's own absence
+# vocabulary and the answer's must stay one list: the day the bundle can show a
+# kind the answer cannot name is the day an honest answer is refused.
 UNCERTAINTY_KINDS = (
     "merge_no_diff",
     "parse_failed",
     "no_version_stored",
     "not_in_this_commit",
+    "binary_no_text",
     "definition_gone",
 )
 

@@ -31,9 +31,12 @@ from codearchaeology.analysis import analyze
 from codearchaeology.ast_pass import run_ast_pass
 from codearchaeology.context import (
     BINARY,
+    BINARY_NO_TEXT,
     CO_CHANGE_FILES,
     CO_CHANGE_PARTNERS,
     DELETED_FILE,
+    DIFF_CHARACTERS,
+    EMPTY_TREE,
     HISTORY_COMMITS,
     MERGE_NO_DIFF,
     NOT_IN_THIS_COMMIT,
@@ -47,8 +50,12 @@ from codearchaeology.context import (
 )
 from codearchaeology.storage import connect
 from sample_repo import (
+    _commit,
+    _configure,
+    _write_file,
     build_deep_history_repo,
     build_sample_repo,
+    git_output,
 )
 
 # The commits of the sample fixture this file reads, by message. The repository
@@ -320,6 +327,144 @@ def test_a_file_with_no_hunks_is_recorded_as_having_none():
     assert _ranges_by_path(patch) == {"new.py": ()}
 
 
+# The diff text: what git printed, bounded and saying so on itself.
+
+
+def _git_diff(repository, base: str, sha: str, path: str) -> str:
+    """The patch git prints for one path, read here rather than through the module.
+
+    The flags are written out in full for the same reason ``_git_ranges`` parses
+    hunks itself: a test that borrowed the module's invocation would agree with
+    the module about being wrong.
+    """
+    completed = subprocess.run(
+        [
+            "git",
+            "--no-pager",
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--unified=3",
+            "--find-renames=50%",
+            "--full-index",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            base,
+            sha,
+            "--",
+            path,
+        ],
+        cwd=Path(repository),
+        capture_output=True,
+        check=True,
+    )
+    return completed.stdout.decode("utf-8", errors="surrogateescape")
+
+
+def _big_diff_repo(tmp_path: Path):
+    """A repository whose last commit rewrites one file far past the ceiling.
+
+    Four hundred lines replaced by four hundred different ones is roughly twenty
+    thousand characters of patch, against a ceiling of four thousand — enough
+    that what is kept and what the whole was are both tellable apart.
+    """
+    repository = tmp_path / "big-diff"
+    repository.mkdir()
+    git_output(repository, "init", "--initial-branch", "main")
+    _configure(repository)
+    _write_file(
+        repository,
+        "wide.py",
+        "".join(f"line {number} stays as it was\n" for number in range(400)),
+    )
+    _commit(repository, "2024-07-01T09:00:00+00:00", "Create wide.py")
+    _write_file(
+        repository,
+        "wide.py",
+        "".join(f"line {number} was rewritten entirely\n" for number in range(400)),
+    )
+    _commit(repository, "2024-07-02T09:00:00+00:00", "Rewrite wide.py")
+    return repository
+
+
+def test_the_diff_is_what_git_prints_for_the_file(context_repo):
+    repository, database = context_repo
+    sha = _sha(repository, database, FIXED)
+    change = _change(build_context(repository, database, sha), "core/app.py")
+
+    expected = _git_diff(repository, f"{sha}^", sha, "core/app.py")
+
+    assert change.diff is not None
+    assert change.diff.text == expected
+    assert not change.diff.truncated
+    assert change.diff.characters == change.diff.characters_total == len(expected)
+
+
+def test_a_diff_over_the_ceiling_is_cut_and_says_so(tmp_path: Path):
+    """The contract's one bounded fact: cut, and never presented as whole."""
+    repository = _big_diff_repo(tmp_path)
+    database = tmp_path / "big.db"
+    analyze(repository, database)
+
+    context = _context(repository, database, "Rewrite wide.py")
+    change = _change(context, "wide.py")
+    sha = _sha(repository, database, "Rewrite wide.py")
+    whole = _git_diff(repository, f"{sha}^", sha, "wide.py")
+
+    assert len(whole) > DIFF_CHARACTERS
+    assert change.diff.truncated
+    assert change.diff.characters == DIFF_CHARACTERS
+    assert change.diff.characters_total == len(whole)
+    assert change.diff.text == whole[:DIFF_CHARACTERS]
+
+
+def test_a_binary_file_has_no_diff_text_and_its_absence_names_why(context_repo):
+    """No text exists, and that is stated — never an empty string standing in."""
+    repository, database = context_repo
+    context = _context(repository, database, FINAL)
+    change = _change(context, "assets/logo.png")
+
+    assert change.is_binary
+    assert change.diff is None
+    assert [
+        absence.kind for absence in context.absences if absence.path == "assets/logo.png"
+    ] == [BINARY_NO_TEXT]
+
+
+def test_a_pure_rename_shows_the_lines_git_prints_for_it(context_repo):
+    """The rename moved no line, and the patch says the rename itself instead."""
+    repository, database = context_repo
+    change = _change(_context(repository, database, RENAMED), "core/app.py")
+
+    assert change.diff is not None
+    assert change.diff.text.startswith("diff --git ")
+    assert "rename from app.py" in change.diff.text
+    assert "rename to core/app.py" in change.diff.text
+
+
+def test_a_root_commit_diff_is_against_the_empty_tree(context_repo):
+    """No parent means the whole file arrives as an addition, and bounded."""
+    repository, database = context_repo
+    sha = _sha(repository, database, INITIAL)
+    change = _change(build_context(repository, database, sha), "app.py")
+
+    assert change.diff is not None
+    assert change.diff.text == _git_diff(repository, EMPTY_TREE, sha, "app.py")
+
+
+def test_a_deleted_file_carries_its_removal_patch(context_repo):
+    """The patch of a deletion is evidence, not a blank."""
+    repository, database = context_repo
+    change = _change(_context(repository, database, FINAL), "legacy.py")
+
+    assert change.diff is not None
+    assert "--- a/legacy.py" in change.diff.text
+    assert "+++ /dev/null" in change.diff.text
+
+
 # What the rest of the sections carry.
 
 
@@ -372,17 +517,22 @@ def test_a_file_the_ast_layer_never_reads_is_not_reported_as_unreadable(
 ):
     """A PNG has no stored version by design, not because something failed.
 
-    Every other absence in the list is a thing that could not be read, and a
-    reader is meant to trust it. A binary file reported there would be a failure
-    that never happened, in the one place that is supposed to mean one.
+    The absence list is the one place a reader is meant to trust about what is
+    missing, and the words that mean the analysis tried and could not read are
+    reserved for failures that happened. The binary file does appear there since
+    the diff entered the bundle — under its own word, which says no text exists
+    rather than that something went wrong.
     """
     repository, database = context_repo
     context = _context(repository, database, FINAL)
 
     assert "assets/logo.png" in [change.path for change in context.changes]
-    assert "assets/logo.png" not in [
-        absence.path for absence in context.absences
+    kinds = [
+        absence.kind
+        for absence in context.absences
+        if absence.path == "assets/logo.png"
     ]
+    assert kinds == [BINARY_NO_TEXT]
 
 
 def test_the_commit_that_ends_a_file_records_that_it_was_not_there(context_repo):

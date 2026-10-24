@@ -35,6 +35,8 @@ from codearchaeology.analysis import analyze
 from codearchaeology.ast_pass import run_ast_pass
 from codearchaeology.cli import app
 from codearchaeology.context import (
+    DIFF_CHARACTERS,
+    DiffText,
     build_context,
     build_json as build_context_json,
     build_object,
@@ -57,11 +59,14 @@ from test_provider import _completion, _endpoint
 runner = CliRunner()
 
 # The largest view the benchmark builds, over the widest shape it has: two
-# hundred files, twenty hunks and ten definitions each, which comes to about
-# 11,300 estimated tokens. The fixture here is narrower than that, so this is a
-# guard on the constants rather than a measurement — raise `FILE_CHANGES` far
-# enough and it fails, which is when somebody should look at the benchmark again.
-VIEW_CEILING = 12_000
+# hundred files, twenty hunks and ten definitions each, which came to about
+# 11,300 estimated tokens before the diff entered the bundle. v0.6 added the
+# bounded patch text — every row of this fixture's view now carries about 2,400
+# characters of it, none of it cut — and the fixture measures 18,044 tokens.
+# Still a guard on the constants rather than a measurement: raise `FILE_CHANGES`
+# or `DIFF_CHARACTERS` far enough and it fails, which is when somebody should
+# look at the benchmark again.
+VIEW_CEILING = 20_000
 
 
 @pytest.fixture(scope="module")
@@ -310,6 +315,33 @@ def test_the_commit_message_is_cut_at_the_ceiling(wide):
         "characters_shown": MESSAGE_CHARACTERS,
         "characters_omitted": 1000,
     }
+
+
+def test_the_selection_counts_the_rows_whose_diff_arrived_cut(wide):
+    """The bundle bounds the diff, not the view, so what is counted here is not
+    rows the selection dropped but rows that were already cut when they arrived —
+    beside the statement every cut row makes for itself on its own fields."""
+    repository, database = wide
+    context = _context(repository, database, "Rewrite every module")
+
+    view = build_view(context)
+    assert view.selection["diffs"] == {"cut": 0}, "this fixture's patches all fit"
+
+    cut = DiffText(
+        text="x" * DIFF_CHARACTERS,
+        characters=DIFF_CHARACTERS,
+        characters_total=DIFF_CHARACTERS + 5000,
+        truncated=True,
+    )
+    changes = tuple(
+        replace(change, diff=cut) if change.path == "mod29.py" else change
+        for change in context.changes
+    )
+
+    view = build_view(replace(context, changes=changes))
+
+    assert "mod29.py" in [row["path"] for row in view.object["file_changes"]]
+    assert view.selection["diffs"] == {"cut": 1}
 
 
 def test_the_earlier_commit_window_is_narrowed_and_the_bounds_say_so(wide):

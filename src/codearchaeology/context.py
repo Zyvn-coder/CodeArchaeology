@@ -1,8 +1,9 @@
 """Build the explanation context for one commit: the evidence, and nothing else.
 
 This is the layer between the stored history and a model. It reads the database,
-asks git for the one thing the database does not hold — where in each file the
-change landed — and assembles both into a value an explanation is written from.
+asks git for the two things the database does not hold — where in each file the
+change landed, and the patch text itself — and assembles all of it into a value
+an explanation is written from.
 
 **No model takes part in building it.** The same commit and the same database
 produce the same bytes, which is what makes this layer testable, and what keeps a
@@ -12,7 +13,7 @@ nothing reaches a network.
 
 The context is sectioned the way the evidence contract sections the evidence:
 what happened, what the files' lives say, what the structure layer derived, what
-the statistics say, and what could not be read. Three rules shape the rest.
+the statistics say, and what could not be read. Four rules shape the rest.
 
 * **The facts about this commit are not capped; the context around them is.** A
   file list or a definition list that stopped early would hide the answer to the
@@ -20,6 +21,11 @@ the statistics say, and what could not be read. Three rules shape the rest.
   the subject, so they get a ceiling — and every ceiling is reported in
   ``bounds``, because a context that quietly left rows out reads exactly like a
   complete one.
+* **The diff is the one fact the bundle itself bounds.** A repository can make
+  one file's patch arbitrarily large without the commit being large in any other
+  way — a lockfile, a vendored copy — and the contract settled this before the
+  reader existed: the diff is available and bounded, and the bound is stated on
+  every row it cut, so a partial patch never reads as a whole one.
 * **The fourth absence the contract names is not repeated here.** "A definition
   is gone" is the ``deleted`` entries in ``definitions``; writing it into
   ``absences`` as well would be one fact in two places, free to disagree with
@@ -74,6 +80,17 @@ CO_CHANGE_PARTNERS = 5
 CO_CHANGE_FILES = 5
 HISTORY_COMMITS = 5
 
+# The ceiling on one file's patch text, the one fact the bundle bounds. It is the
+# message's own ceiling — a file's patch may cost a reader no more than a long
+# commit message — and the measurement behind it: every shape
+# `benchmarks/context_benchmark.py` builds stays whole under it except the two
+# single-file extremes (22,297 and 32,727 characters), while the largest patches
+# a real repository produces — a lockfile rewrite measured at 110,944 — are cut
+# to their first hundred lines with the whole size stated on the row. Counted in
+# characters rather than bytes for the same reason the message cap is: the
+# ceiling is about how much a reader has to read.
+DIFF_CHARACTERS = 4000
+
 # Why a file has no changed line ranges. Four answers, kept apart because a
 # reader has to be able to tell "the change landed nowhere" from "nobody looked".
 RANGES = "ranges"
@@ -83,10 +100,14 @@ NO_RANGES = "no_ranges_recorded"
 NO_DIFF = "no_diff_recorded"
 
 # The absences the evidence contract names, minus the one that is a deletion.
+# ``binary_no_text`` is v0.6's: the contract's amendment makes the binary case a
+# named absence rather than an empty diff, so "no text exists" is never read as
+# "nothing happened".
 MERGE_NO_DIFF = "merge_no_diff"
 PARSE_FAILED = "parse_failed"
 NO_VERSION_STORED = "no_version_stored"
 NOT_IN_THIS_COMMIT = "not_in_this_commit"
+BINARY_NO_TEXT = "binary_no_text"
 
 # `git show` is used rather than `git diff` so that a root commit needs no second
 # code path: with no parent it prints the whole file as an addition, which is
@@ -106,7 +127,34 @@ SHOW_ARGUMENTS = (
     "--no-textconv",
 )
 
+# The patch text is read with `git diff` rather than derived from the show above,
+# because a diff is what git printed and `difflib` is not git's algorithm: the
+# same two blobs can hunk differently under it, and the fact layer would be
+# holding a new thing in an old name. Every axis a configuration could move is
+# pinned: colour, drivers and filters as above; the context width at git's own
+# default; rename detection on at the 50% the analysis already uses; and
+# `--full-index` plus explicit prefixes so `core.abbrev`, `diff.noprefix` and
+# `diff.mnemonicPrefix` cannot change the bytes from one machine to the next.
+# The empty tree stands in for the parent of a root commit, which is exactly
+# what `git show` prints for one: the whole file as an addition.
+DIFF_ARGUMENTS = (
+    "--no-pager",
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--unified=3",
+    "--find-renames=50%",
+    "--full-index",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+)
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 NEW_FILE = "+++ "
+OLD_FILE = "--- "
 # A rename whose content did not change gets no ``---``/``+++`` pair at all:
 # git prints the two rename headers and stops. Without reading this line such a
 # file would look like one nobody had looked at, when git did look and the answer
@@ -126,13 +174,33 @@ class LineRange:
 
 
 @dataclass(frozen=True, slots=True)
+class DiffText:
+    """One file's patch as git printed it, bounded and saying so on itself.
+
+    ``text`` is the file's section of the diff verbatim — headers, hunks and all
+    — or the first ``DIFF_CHARACTERS`` characters of it when the ceiling cut it.
+    ``characters`` is how much of the patch is held, ``characters_total`` how
+    much of it there was, and ``truncated`` which of the two the reader is
+    looking at: the contract forbids presenting a bounded diff as the whole one,
+    and the row is where that is said.
+    """
+
+    text: str
+    characters: int
+    characters_total: int
+    truncated: bool
+
+
+@dataclass(frozen=True, slots=True)
 class FileContext:
     """One file this commit touched, and where in it the change landed.
 
     ``ranges`` is the diff summary: the new-side spans of every hunk, which is
     what lets a reader put the change beside the definitions it fell inside.
-    ``diff_state`` says why the list is what it is, so an empty one is never read
-    as "nothing happened here".
+    ``diff`` is the patch text itself, bounded per file, or ``None`` where none
+    exists — a binary file, a merge, a path git printed nothing for — each of
+    which ``diff_state`` or the absences name rather than leave as an empty
+    string standing in for text.
     """
 
     path: str
@@ -144,6 +212,7 @@ class FileContext:
     is_binary: bool
     diff_state: str
     ranges: tuple[LineRange, ...]
+    diff: DiffText | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,10 +328,10 @@ class HistoryContext:
 class Absence:
     """Something the bundle does not hold, named so the edge is visible.
 
-    ``kind`` is which of the four it is. They are kept apart because they look
-    alike and mean different things: a file nobody could read is not a file that
-    was not there, and a merge git printed no diff for is not a commit that
-    changed nothing.
+    ``kind`` is which kind of not-there it is. The kinds are kept apart because
+    they look alike and mean different things: a file nobody could read is not a
+    file that was not there, a merge git printed no diff for is not a commit that
+    changed nothing, and a binary file's missing patch is not a failure at all.
     """
 
     kind: str
@@ -320,6 +389,7 @@ def build_context(repository_root, database, sha: str) -> CommitContext:
 
     histories = build_histories(lives, versions, definitions)
     ranges = _diff_ranges(repository_root, commit)
+    diffs = _diff_texts(repository_root, commit)
     ranked = _ranked(lives)
     history = _history(lives, commit)
 
@@ -332,7 +402,7 @@ def build_context(repository_root, database, sha: str) -> CommitContext:
         committed_at=commit.committed_at.isoformat(),
         message=commit.message,
         is_merge=commit.is_merge,
-        changes=_changes(commit, ranges),
+        changes=_changes(commit, ranges, diffs),
         lifecycle=_lifecycle(lives, commit),
         definitions=_definitions(histories, commit),
         cochange=_cochange(commits, ranked),
@@ -373,6 +443,14 @@ def build_object(context: CommitContext) -> dict:
                 "ranges": [
                     {"start": span.start, "end": span.end} for span in change.ranges
                 ],
+                "diff": None
+                if change.diff is None
+                else {
+                    "text": change.diff.text,
+                    "characters": change.diff.characters,
+                    "characters_total": change.diff.characters_total,
+                    "truncated": change.diff.truncated,
+                },
             }
             for change in context.changes
         ],
@@ -499,11 +577,19 @@ def _lives_of(lifecycles: Iterable[Lifecycle], commit: Commit) -> tuple[Lifecycl
     return tuple(found)
 
 
-def _changes(commit: Commit, ranges: Mapping[str, tuple[LineRange, ...]] | None):
-    return tuple(_change(change, ranges) for change in commit.changes)
+def _changes(
+    commit: Commit,
+    ranges: Mapping[str, tuple[LineRange, ...]] | None,
+    diffs: Mapping[str, DiffText] | None,
+):
+    return tuple(_change(change, ranges, diffs) for change in commit.changes)
 
 
-def _change(change: FileChange, ranges: Mapping[str, tuple[LineRange, ...]] | None):
+def _change(
+    change: FileChange,
+    ranges: Mapping[str, tuple[LineRange, ...]] | None,
+    diffs: Mapping[str, DiffText] | None,
+):
     if ranges is None:
         # A merge. Git prints no diff for one, so nothing here says where the
         # change landed — and that is not the same as a change that landed
@@ -518,6 +604,7 @@ def _change(change: FileChange, ranges: Mapping[str, tuple[LineRange, ...]] | No
             is_binary=change.is_binary,
             diff_state=NO_DIFF,
             ranges=(),
+            diff=None,
         )
 
     if change.change_type == DELETED:
@@ -532,6 +619,11 @@ def _change(change: FileChange, ranges: Mapping[str, tuple[LineRange, ...]] | No
         # the two are different and only one of them is known here.
         state, spans = NO_RANGES, ()
 
+    # A binary file's absence is named in ``absences`` and never stands in as an
+    # empty diff; every other touched path carries its patch when git printed
+    # one, deletions included — the removal patch is evidence, not a blank.
+    diff = None if change.is_binary else diffs.get(change.path) if diffs else None
+
     return FileContext(
         path=change.path,
         change_type=change.change_type,
@@ -542,6 +634,7 @@ def _change(change: FileChange, ranges: Mapping[str, tuple[LineRange, ...]] | No
         is_binary=change.is_binary,
         diff_state=state,
         ranges=spans,
+        diff=diff,
     )
 
 
@@ -709,14 +802,19 @@ def _before(life: Lifecycle, commit: Commit) -> list[LifecycleEvent]:
 
 
 def _absences(histories: Iterable[FileHistory], commit: Commit) -> tuple[Absence, ...]:
-    """What could not be read, and which of the four it is.
+    """What could not be read, and which kind of not-read it is.
 
     A merge is recorded first because it is a property of the commit rather than
     of any file in it, and the files follow in path order so the list is the same
     bytes every time it is built.
 
-    A path the AST layer never reads is left out. That layer reads Python and
-    nothing else, so a binary or a Markdown file has no stored version by design
+    A binary path is recorded as ``binary_no_text`` and as nothing else. Its
+    counts were never read and its blobs have no text, which is a fact about the
+    diff rather than a failure of the analysis — so it is named under its own
+    word, never under the words that mean something went wrong.
+
+    A path the AST layer never reads is otherwise left out. That layer reads
+    Python and nothing else, so a Markdown file has no stored version by design
     — and reporting it here as "no version was stored for this commit" would be a
     failure that never happened, in the one list a reader is meant to trust about
     what is missing. The file is still in ``changes``; what is absent is only the
@@ -731,6 +829,16 @@ def _absences(histories: Iterable[FileHistory], commit: Commit) -> tuple[Absence
                 detail="git prints no diff for a merge commit",
             )
         )
+
+    for change in commit.changes:
+        if change.is_binary:
+            found.append(
+                Absence(
+                    kind=BINARY_NO_TEXT,
+                    path=change.path,
+                    detail="the file is binary, so git prints no diff text",
+                )
+            )
 
     for history in histories:
         for version in history.versions:
@@ -842,6 +950,118 @@ def _ranges_by_path(output: bytes) -> dict[str, tuple[LineRange, ...]]:
             ranges[path].append(LineRange(start=start, end=start + count - 1))
 
     return {name: tuple(found) for name, found in ranges.items()}
+
+
+def _diff_texts(repository_root, commit: Commit) -> dict[str, DiffText] | None:
+    """Each file's patch as git printed it, bounded per file, or ``None`` for a merge.
+
+    The diff is the unit's own — this commit against its parent, or against the
+    empty tree when there is no parent — read in one invocation and split by
+    file. Git computes it and the tool does not: the standard library's differ is
+    not git's algorithm, and the fact layer's diff is what git printed. A merge
+    keeps the absence it has always had; no parent is chosen for it here.
+    """
+    if commit.is_merge:
+        return None
+    base = commit.parents[0] if commit.parents else EMPTY_TREE
+    return _diffs_by_path(
+        _run_git(repository_root, *DIFF_ARGUMENTS, base, commit.sha)
+    )
+
+
+def _diffs_by_path(output: bytes) -> dict[str, DiffText]:
+    """Every file section of the diff, bounded and saying on itself what it holds.
+
+    A section is everything from one ``diff --git`` line to the next, verbatim —
+    headers, index, hunks, and the two rename lines a pure rename stands as. The
+    body of a patch cannot start a section: a hunk line beginning ``@@`` ends the
+    header block, and every body line carries its own ``+``, ``-`` or space, so
+    the split lands where git put the seams.
+    """
+    text = output.decode("utf-8", errors="surrogateescape")
+    parts = text.split("\ndiff --git ")
+    sections = []
+    for index, part in enumerate(parts):
+        if not part.strip():
+            continue
+        section = part if index == 0 else "diff --git " + part
+        # The newline the split consumed is the one that ended this section's
+        # last line — it belongs here, not to the header of the next section.
+        if index < len(parts) - 1:
+            section += "\n"
+        sections.append(section)
+
+    found: dict[str, DiffText] = {}
+    for section in sections:
+        path = _diff_section_path(section)
+        if path is not None:
+            found[path] = _bounded_diff(section)
+    return found
+
+
+def _diff_section_path(section: str) -> str | None:
+    """The path a diff section belongs to, under the name the bundle's row carries.
+
+    The ``+++`` side is the side the ranges are measured on, so it decides here
+    too: a modification, an addition and a rename that also moved lines all carry
+    it. A deletion prints ``+++ /dev/null`` and keeps its name on the ``---``
+    side; a pure rename prints no ``+++``/``---`` pair at all and is named by its
+    ``rename to`` line. A binary file prints none of these, so its section stays
+    unclaimed — the absence names it, and no blank stands in as its text.
+
+    Only the header block is read: the scan stops at the first hunk line,
+    because a body line whose content begins ``-- `` or ``++ `` would otherwise
+    read as a header wearing its own sign.
+    """
+    lines = section.splitlines()
+    for line in lines:
+        if HUNK.match(line):
+            break
+        if line.startswith(NEW_FILE):
+            new_side = _path_of(line)
+            if new_side is not None:
+                return new_side
+            break
+
+    for line in lines:
+        if HUNK.match(line):
+            break
+        if line.startswith(RENAME_TO):
+            return _after(line, RENAME_TO)
+
+    for line in lines:
+        if HUNK.match(line):
+            break
+        if line.startswith(OLD_FILE):
+            return _path_of_old(line)
+    return None
+
+
+def _path_of_old(line: str) -> str | None:
+    """The path on a ``---`` line, or ``None`` when that side of the diff is empty.
+
+    The mirror of :func:`_path_of` — the same trailing tab, the same quoting,
+    undone the same way — for the side a deleted file keeps its name on.
+    """
+    value = _after(line, OLD_FILE)
+    if value == "/dev/null":
+        return None
+    return value[2:] if value.startswith("a/") else value
+
+
+def _bounded_diff(section: str) -> DiffText:
+    """The section whole, or cut at the ceiling, saying on itself which it is."""
+    whole = len(section)
+    if whole <= DIFF_CHARACTERS:
+        return DiffText(
+            text=section, characters=whole, characters_total=whole, truncated=False
+        )
+    return DiffText(
+        text=section[:DIFF_CHARACTERS],
+        characters=DIFF_CHARACTERS,
+        characters_total=whole,
+        truncated=True,
+    )
 
 
 def _path_of(line: str) -> str | None:

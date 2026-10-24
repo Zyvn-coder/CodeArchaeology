@@ -812,10 +812,13 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
 ```
 
 The bundle carries the commit, the files it touched **and where in them the change
-landed** (`ranges`, read out of git — the one thing the database does not hold),
-each file's life, the definitions this commit created, modified or ended, what
+landed** (`ranges`, read out of git — one of the two things the database does not
+hold), each file's life, the definitions this commit created, modified or ended, what
 usually changes alongside those files, the earlier commits that touched them, and
-a list of what could not be read. `bounds` says what was capped, so a context that
+a list of what could not be read. **The other thing git is asked for is the patch
+text itself**: each file's `diff` rides its own row, bounded at 4,000 characters,
+and a row the bound cut states both sizes, so a partial patch never reads as a
+whole one. `bounds` says what was capped, so a context that
 left rows out never reads like a complete one.
 
 **The memories kept about this commit are shown beside the evidence**, under their
@@ -1825,8 +1828,9 @@ Each release, and what it changed, is recorded in the
 - Merge commits are stored with their parents but with no file changes, because
   `git log` prints no diff for a merge.
 - Binary files are stored without line counts and shown as `-`.
-- No patch content is read or stored, so the tool never shows the body of a
-  diff. Only the changed files and their line counts.
+- Patch text is read from git per run and never stored, bounded at 4,000
+  characters per file. A row the bound cut states the whole size, and a binary
+  file is named as `binary_no_text` rather than shown as an empty diff.
 - Rename detection is git's, at its default 50% similarity. Renaming a file
   while most of its content changes makes git report a deletion plus a separate
   addition, which splits that file's life in two. The score git did report is
