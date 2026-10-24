@@ -10,15 +10,17 @@ that here.
 
 Update it when a decision is made or a trap is found. Nothing else.
 
-**Last updated: 2026-10-24. v0.6 has four units. The diff reader, the set
-bundle and the set's selection are landed — `12e0e42`, `3625cac` and `1bae454`
-on `origin/main`, all four CI jobs green on each — and the command surface
-(Unit 4) is built and green at **1074 tests**: `explain <base>..<tip>` carries
-the set bundle through the same three paths a commit has, `--no-model` waves a
-configured model off, `explain --json`'s envelope gains `bundle_sha256` for
-both units, and the validator knows a span's citations. Unit 4 sits uncommitted
-for review; units 5–6 wait on the user's word. The pilot stays shelved — a
-waiver, not a null result; the value claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
+**Last updated: 2026-10-24. v0.6 has five units. The diff reader, the set
+bundle, the set's selection and the command surface are landed — `12e0e42`,
+`3625cac`, `1bae454` and `d1bc464` on `origin/main`, all four CI jobs green on
+each — and the run record (Unit 5, the ruled option E) is built and green at
+**1084 tests**: the `explain_runs` table (its own stamp, not one of
+`storage`'s) writes exactly when an explanation is printed — the five ruled
+facts plus the unit, never a sentence a model wrote — and `archaeology runs`
+reads it back, the nineteenth command. Unit 5 sits uncommitted for review;
+unit 6 (the prompt's own unit, still deferred) and the release wait on the
+user's word. The pilot stays shelved — a waiver, not a null result; the value
+claim stays UNKNOWN.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -71,6 +73,16 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## v0.6 Unit 5: the run record, 2026-10-24
+
+**What was built.** `src/codearchaeology/runs.py` and the `runs` command. The `explain_runs` table carries its own stamp (`explain_runs_schema_version = "1"`), is deliberately not one of `storage`'s tables, and is refused rather than guessed about when its stamp is not this tool's. A row is written exactly when an explanation is printed: the unit (`commit`/`sha` or `range`/`base..tip`), the bundle's hash — the same value that run's envelope carried, held equal by a test — the endpoint, the model, the instructions' hash, and the moment. Nothing else, and never a sentence the model wrote. The prompt's version is a hash of `INSTRUCTIONS` computed at record time, so it cannot forget to be raised. A store this tool cannot trust is a note on stderr and the answer still prints — the answer was paid for; the record is metadata.
+
+**The one deliberate reading, disclosed.** The range's memory section rides through an adapter (`cli._SetForMemories`): paths under every name, lives, definitions; `sha` is the empty string — a range is not a commit, and a member-commit match would be a new rule for the layer row 5 says not to touch; `committed_at` is the tip's. **A memory whose subject is one commit is therefore not shown for a range in v0.6** — the honest reading, and a later phase can argue for the member rule.
+
+**Three small traps, all test-side and all worth the pattern:** the offline case cannot be made offline by filtering `env=` (click overlays rather than replaces — `monkeypatch.delenv` is the tool); a test that poisons a shared fixture's stamp must put it back in a `finally`; and the documented-commands checker wants `archaeology runs` followed by whitespace, so a mention that ends at a closing backtick does not count.
+
+**READMEs:** the status blocks count nineteen commands and name `runs`; a short section in each language documents it (no console block — a run row carries the moment it was written, and a replayed example would fail on a busy day by design).
 
 ## v0.6 Unit 4: the command surface, 2026-10-24
 

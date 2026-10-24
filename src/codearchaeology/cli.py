@@ -17,11 +17,12 @@ unless told to.
 import json
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 from codearchaeology import __version__
 from codearchaeology.analysis import (
@@ -46,9 +47,11 @@ from codearchaeology.cochange import load_cochange_commits
 from codearchaeology.commit import CommitNotFound, build_file_table, load_commit
 from codearchaeology.context import build_context
 from codearchaeology.context import build_json as build_context_json
+from codearchaeology.context import build_object as build_context_object
 from codearchaeology.explanation import build_json as build_explanation_json
 from codearchaeology.explanation import build_prompt, render
 from codearchaeology.explanation import build_span_envelope_json
+from codearchaeology.explanation import bundle_sha256, prompt_sha256
 from codearchaeology.definition_history import load_histories
 from codearchaeology.file import build_block, build_json as build_file_json
 from codearchaeology.file import find_files, normalise
@@ -122,6 +125,7 @@ from codearchaeology.provider import (
     ProviderError,
     Settings,
 )
+from codearchaeology.runs import RunsStoreError, read_runs, record
 from codearchaeology.selection import build_span_view, build_view
 from codearchaeology.span import (
     EmptyRangeError,
@@ -797,6 +801,10 @@ def _explain_commit(revision, path, database, as_json, no_model) -> None:
         _memory_section(repository_root, database, context),
         as_json,
         no_model,
+        repository_root,
+        database,
+        ("commit", context.sha),
+        bundle_sha256(build_context_object(context)),
     )
 
 
@@ -831,15 +839,31 @@ def _explain_range(revision, path, database, as_json, no_model) -> None:
         _memory_section(repository_root, database, _memories_of(span)),
         as_json,
         no_model,
+        repository_root,
+        database,
+        ("range", f"{base}..{tip}"),
+        bundle_sha256(build_span_object(span)),
     )
 
 
-def _run_explain(view_of, offline_text, envelope_json, section, as_json, no_model) -> None:
+def _run_explain(
+    view_of,
+    offline_text,
+    envelope_json,
+    section,
+    as_json,
+    no_model,
+    repository_root,
+    database,
+    unit,
+    bundle_hash,
+) -> None:
     """The half of the command a unit does not change: reaching a model or not.
 
     Every unit differs only in what it builds; how the answer is obtained,
-    checked and emitted is one implementation, because two copies of the
-    retry-once rule or the offline note would be two places that can disagree.
+    checked, emitted and recorded is one implementation, because two copies of
+    the retry-once rule or the offline note would be two places that can
+    disagree.
     """
     settings = Settings.from_environment()
 
@@ -896,6 +920,11 @@ def _run_explain(view_of, offline_text, envelope_json, section, as_json, no_mode
             )
             raise typer.Exit(code=1) from None
 
+    # Written exactly here: the answer exists, it checked out, and it is about
+    # to be printed — one printed explanation, one row, nothing else. A failure
+    # to record is a note rather than a refusal; the answer was paid for.
+    _record_run(repository_root, database, unit, bundle_hash, settings)
+
     if as_json:
         typer.echo(envelope_json(explanation, view.selection, section_object(section)))
         return
@@ -907,6 +936,31 @@ def _run_explain(view_of, offline_text, envelope_json, section, as_json, no_mode
         # stated, printed from the store and never from the model.
         block = f"{block}\n\n{render_section(section, related_notes(explanation))}"
     typer.echo(block)
+
+
+def _record_run(repository_root, database, unit, bundle_hash, settings) -> None:
+    """Write the run's provenance — the facts about the asking, never the answer.
+
+    Exactly the ruled fields: the unit, the bundle's hash, the endpoint, the
+    model, the instructions' hash, the moment. A store this tool cannot trust
+    is a note on stderr and the answer still prints, for the same reason an
+    unreadable memory store is: the record is metadata about a run, and
+    metadata nobody can write is not a reason to hide a checked answer.
+    """
+    try:
+        with open_analysis(repository_root, database) as connection:
+            record(
+                connection,
+                unit_kind=unit[0],
+                unit_spec=unit[1],
+                bundle_sha256=bundle_hash,
+                provider=settings.base_url,
+                model=settings.model,
+                prompt_sha256=prompt_sha256(),
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+    except RunsStoreError as error:
+        typer.echo(f"Note: {error}", err=True)
 
 
 def _span_context_json(span, section) -> str:
@@ -963,6 +1017,101 @@ class _SetForMemories:
 def _memories_of(span):
     """The set as the memory reader's context, named for what it is."""
     return _SetForMemories(span)
+
+
+@app.command()
+def runs(
+    path: Path = REPOSITORY_ARGUMENT,
+    database: Path | None = DATABASE_OPTION,
+    as_json: bool = typer.Option(
+        False, "--json", help="Print JSON instead of the table."
+    ),
+    limit: int = typer.Option(
+        20, "--limit", help="How many runs to show, newest first."
+    ),
+) -> None:
+    """The model runs this database recorded: what was asked, which model, and the
+    hash of the evidence each was shown.
+
+    A row is written exactly when an explanation is printed, and it holds the
+    facts about the asking — the unit, the endpoint, the model, the bundle's
+    hash, the prompt's hash, the moment — and never a sentence the model wrote.
+    That is what makes "was this explanation produced from the bundle I have
+    now?" a comparison of two hashes: re-explain and compare. Nothing here is
+    evidence, and no other command reads this table.
+    """
+    try:
+        repository_root, database = _repository_and_database(path, database)
+    except GitError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    head_sha = _warn_if_behind(repository_root, database)
+    try:
+        with open_analysis(repository_root, database) as connection:
+            found = read_runs(connection, limit=limit)
+    except AnalysisError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "repository": str(repository_root),
+                    "head_sha": head_sha,
+                    "runs": [
+                        {
+                            "unit_kind": run.unit_kind,
+                            "unit_spec": run.unit_spec,
+                            "bundle_sha256": run.bundle_sha256,
+                            "provider": run.provider,
+                            "model": run.model,
+                            "prompt_sha256": run.prompt_sha256,
+                            "created_at": run.created_at,
+                        }
+                        for run in found
+                    ],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    if not found:
+        typer.echo(
+            "No runs recorded. A run is written when a model's answer is printed."
+        )
+        return
+
+    table = Table(box=None, show_header=True, header_style="bold")
+    table.add_column("when", no_wrap=True)
+    table.add_column("unit", no_wrap=True)
+    table.add_column("model", no_wrap=True)
+    table.add_column("bundle", no_wrap=True)
+    for run in found:
+        table.add_row(
+            run.created_at,
+            _run_unit(run),
+            run.model,
+            run.bundle_sha256[:SHORT_SHA_LENGTH],
+        )
+    Console().print(table)
+
+    typer.echo()
+    typer.echo(
+        "A run records what was asked and what it was asked over — never what"
+        " was answered."
+    )
+
+
+def _run_unit(run) -> str:
+    """The unit as a reader reads it: full for a program, short for a terminal."""
+    if run.unit_kind == "range" and ".." in run.unit_spec:
+        base, tip = run.unit_spec.split("..")
+        return f"{base[:SHORT_SHA_LENGTH]}..{tip[:SHORT_SHA_LENGTH]}"
+    return run.unit_spec[:SHORT_SHA_LENGTH]
 
 
 # Memory. The acts are Unit 1's five plus Unit 2's adopt; this unit ships the

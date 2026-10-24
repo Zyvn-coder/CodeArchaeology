@@ -5,12 +5,15 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 > **Status: v0.5.3 is released — annotated tag `v0.5.3`, with a GitHub Release,
-> made after all four CI jobs passed on that commit.** Eighteen commands work
+> made after all four CI jobs passed on that commit.** Nineteen commands work
 > today: the ten of v0.4 — through `explain`, the only one that talks to a model —
 > plus eight memory acts
 > (`memory create`, `list`, `show`, `supersede`, `invalidate`, `adopt`, `export`
-> and `import`), which keep what people know about the project beside the evidence
-> and never treat it as evidence. **The evidence rows can be rebuilt from git; the
+> and `import`), and `archaeology runs`, which reads what this database has
+> logged about the model runs `explain` made — what was asked, which model
+> answered, and the hash of the evidence each was shown, never a sentence the
+> model wrote. The memory acts keep what people know about the project beside
+> the evidence and never treat it as evidence. **The evidence rows can be rebuilt from git; the
 > memory rows cannot** — that exception is the one thing v0.5 changes about the
 > database, and it is stated in *Where the database lives* below. v0.5.1 wrote the
 > first half of memory portability — a memory can be written to a file you place —
@@ -961,6 +964,24 @@ the two it got would be a reader that can be wrong, the same reason `file --json
 is always an object holding a list. The evidence travels beside the answer so that
 one can be checked against the other without a second call, and the `confidence`
 in the JSON is the count the tool made, not a number the model chose.
+
+### The runs a database has recorded
+
+`archaeology runs` lists the model runs this database has logged, newest first
+(`--limit` to change how many; `archaeology runs --json` prints the same rows
+as one document). A run is
+written exactly when an explanation is printed — the offline path writes
+nothing, a refused answer writes nothing — and the row holds the facts about
+the asking and none of the answer: the unit (a commit or `base..tip`), the
+endpoint and the model, the hash of the evidence bundle the answer was built
+from — the same value that run's `explain --json` carried as `bundle_sha256` —
+the hash of the prompt's instructions, and the moment.
+
+That is what makes "was this explanation produced from the bundle I have now?"
+a comparison rather than a memory: re-explain, and compare the two hashes. The
+table keeps its own version stamp beside the evidence schema's, it is not one
+of the evidence tables, and no other command reads it — a run is history about
+the tool, not history about the repository.
 
 ### Keep what people know
 

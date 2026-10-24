@@ -317,6 +317,17 @@ def bundle_sha256(bundle: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def prompt_sha256() -> str:
+    """The hash of the instructions text, whatever it currently says.
+
+    A version constant can forget to be raised, and the run row would then lie
+    about what the model was told; a hash of the text itself cannot. Computed
+    from ``INSTRUCTIONS`` at record time, so it can never drift from the prompt
+    that was actually sent.
+    """
+    return hashlib.sha256(INSTRUCTIONS.encode("utf-8")).hexdigest()
+
+
 def build_object(
     explanation: "Explanation | None",
     context,

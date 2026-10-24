@@ -5,11 +5,13 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 > **状态：v0.5.3 已发布——注释 tag `v0.5.3`，附 GitHub Release，四个 CI job 在该提交
-> 上全部通过之后才打的。** 现在有十八个
+> 上全部通过之后才打的。** 现在有十九个
 > 命令可用：v0.4 的十个（到 `explain` 为止，它是唯一会和模型说话的一个），加上 memory
 > 的八个动作（`create`、`list`、`show`、`supersede`、`invalidate`、`adopt`、`export`、
-> `import`）
-> ——它们把人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git
+> `import`），
+> 以及 `archaeology runs`——它读取这个数据库记录的模型运行：问了什么、哪个模型答的、
+> 每次看到的是哪份证据的哈希，永远不包含模型写下的句子。memory
+> 的八个动作把人知道的事情存在证据旁边，并且永远不把这些事情当成证据。**证据行可以靠重读 git
 > 重建，memory 行不能**——这是 v0.5 对数据库唯一的一处改动，写在下面的"数据库放在哪"一节里。
 > v0.5.1 写下了 memory 可携带性的一半——memory 可以写成一个由你放置的文件——格式冻结在
 > [`docs/v0.5.1-portability-design.md`](docs/v0.5.1-portability-design.md)；v0.5.2 补上另一半
@@ -866,6 +868,20 @@ No model is configured, so this is the evidence itself. Set CODEARCHAEOLOGY_AI_B
 `state` 是 `evidence_only`，`explanation` 为 null。一个必须先搞清自己拿到哪种的读者，就是会
 出错的读者，这和 `file --json` 永远是一个装着列表的对象是同一个理由。证据和答案并排放在一起，
 所以不必再调一次就能互相核对；JSON 里的 `confidence` 是工具数出来的那个数，不是模型自己选的。
+
+### 数据库记录过的运行
+
+`archaeology runs` 列出这个数据库记录的模型运行，最新的在前（`--limit`
+改数量；`archaeology runs --json` 把同样的行输出成一份文档）。一条运行记录恰在解释被打印时写入——
+离线路径不写、被拒绝的答案也不写——而且这一行只保存"问"这一侧的事实，不保存
+答案的任何一个字：单元（一个提交或 `base..tip`）、端点和模型、答案所依据的证据
+bundle 的哈希（与那次运行的 `explain --json` 里的 `bundle_sha256` 同值）、prompt
+指令的哈希，以及时刻。
+
+这让"我手上的这份证据，是不是当年产出那条解释的证据？"变成一次比较而不是一段
+回忆：重新解释一次，比对两个哈希。这张表带自己的版本戳、放在证据 schema 旁边，
+不是证据表之一，也没有别的命令读它——运行记录是关于这个工具的历史，不是关于
+仓库的历史。
 
 ### 记住人知道的事情
 
