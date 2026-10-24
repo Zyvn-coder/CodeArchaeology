@@ -14,7 +14,7 @@ Update it when a decision is made or a trap is found. Nothing else.
 `docs/v0.6-problem-definition.md` fixes the phase's question, its evidence
 boundary, its non-goals and the six decisions that are the user's — the reasons,
 and the four state facts the unit checked, are in the section below. Nothing was
-implemented and none of those decisions was taken. The pilot is shelved by the user's ruling of 2026-10-24 and its v0.6 precondition is waived — a waiver, not a null result; the value claim stays UNKNOWN — so v0.6 now waits only on §11 rows 1–3. `b2fd3d8`'s audit record and the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
+implemented and none of those decisions was taken. The pilot is shelved by the user's ruling of 2026-10-24 and its v0.6 precondition is waived — a waiver, not a null result; the value claim stays UNKNOWN. §11 rows 1–3 and 5 were ruled the same day (the unit is a revision range; the diff enters the bundle as bounded text; persistence is A for prose and E for provenance; the Memory layer is untouched), so v0.6's next unit is the design freeze, the user's to commission. `b2fd3d8`'s audit record and the v0.6 problem definition are landed on `origin/main` by one push.** **v0.5.3 is released: an annotated tag
 at `90b2c8a` with a GitHub Release, made after all four CI jobs passed on that
 commit.** The tree
 says 0.5.3 in the six places that are compared and the suite is at 1030 tests,
@@ -67,6 +67,17 @@ questions — whether an explanation is ever stored, whether the prompt gets a u
 of its own, and how the evidence alone is read once a model is configured; and the
 v0.5 ones the final-state doc lists — `memory import`, the proposal route, `--json`
 on the writing acts, `--no-memory`, and subject filtering on `list`.
+
+## The user rules on four of v0.6's six decisions, 2026-10-24
+
+**What was ruled, one line each.** The full reasoning and the costs stay in the problem definition; the rows are §11's.
+
+1. **The unit is B — a revision range**, with A (one commit) kept as the floor, C demoted to a selector over B, and D rejected (§3 records why each). The design freeze's first question is the bundle's shape for a set of commits: many authors, many messages, many parents, paths touched more than once.
+2. **The diff enters the bundle as bounded text**, with the bound and the omission count stated wherever the text is cut, and never a partial diff presented as whole. This amends `docs/v0.4-evidence-contract.md` — the amendment is part of the design freeze, in the §18 style the cochange design set for recording what the building changed about a freeze. The concrete bound value stays open by design (§12).
+3. **Persistence is A for the text, E for anything stored.** No sentence a model wrote is ever written anywhere. If anything is stored it is the run's provenance — bundle hash, provider, model id, prompt version, timestamp — which is a fact, and the only checkable meaning "replay" has. Option E is one small table: the design freeze specifies it, and it is the only schema change v0.6 has so far committed itself to.
+4. **The Memory layer is not touched.** v0.6 reads memory nowhere new; the five boundary rules and their tests stand unchanged.
+
+With the pilot's precondition waived earlier the same day, §11 rows 1–5 are answered and only `confidence` (row 6) stays open — its deadline ("before v0.6 adds a consumer of `explain --json`") has not arrived. **What this unblocks is the v0.6 design freeze**: the set-bundle's shape, the diff's read mechanism and its stated bound, the selector, the selection rule for a set, the provenance table, and the amendment to the evidence contract. Nothing in it is code; it is the next unit, and it is the user's to commission.
 
 ## The pilot is shelved, and the user waives its v0.6 precondition, 2026-10-24
 
